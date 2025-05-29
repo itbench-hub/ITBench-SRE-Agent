@@ -11,3 +11,13 @@ finops_data_query_task:
   expected_output: >
     A report with summary of the returned data
   agent: finops_data_query_agent
+
+finops_anomaly_detection_task:
+  description: >
+    Given a request in natural language to detect if there are any anomalies present in the requested data.
+    First step is to load the CSV at ./data/focus_data_table.csv using the FileReadTool.
+    Identify the data of interest based on the user query and write it to ./data/intermediate_data.csv using the FileWriterTool.
+    Then use the NL2AnomalyDetectionCustomTool tool to identify any anomalies present in the data.
+  expected_output: >
+    A report with summary of the returned data
+  agent: finops_anomaly_detection_agent

@@ -18,12 +18,14 @@ import os
 # from chromadb.utils.embedding_functions.openai_embedding_function import OpenAIEmbeddingFunction
 from crewai import LLM, Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
+from crewai_tools import FileReadTool, FileWriterTool
 from dotenv import load_dotenv
 
 from lumyn.llm_backends.init_backend import (get_llm_backend_for_agents,
                                                     get_llm_backend_for_tools)
 from lumyn.tools.human_tool import HumanCustomTool
 from lumyn.tools.observability_stack.clickhouse_nl2sql import NL2SQLClickHouseCustomTool
+from lumyn.tools.anomaly_detection import AnomalyDetectionCustomTool
 
 load_dotenv()
 
@@ -53,7 +55,23 @@ class LumynFinOpsCrew():
         return Agent(config=self.agents_config["finops_data_query_agent"],
                      llm=get_llm_backend_for_agents(),
                      tools=[
-                        NL2SQLClickHouseCustomTool(llm_backend=get_llm_backend_for_tools())
+                        NL2SQLClickHouseCustomTool(llm_backend=get_llm_backend_for_tools()),
+                        FileWriterTool(file_path="./data/data_intermediate.csv")
+                     ],
+                     allow_delegation=False,
+                     max_iter=20,
+                     step_callback=self.callback_agent,
+                     verbose=True,
+                     respect_context_window=True,
+                     human_input=False)
+    
+    @agent
+    def finops_anomaly_detection_agent(self) -> Agent:
+        return Agent(config=self.agents_config["finops_anomaly_detection_agent"],
+                     llm=get_llm_backend_for_agents(),
+                     tools=[
+                        NL2SQLClickHouseCustomTool(llm_backend=get_llm_backend_for_tools()),
+                        AnomalyDetectionCustomTool()
                      ],
                      allow_delegation=False,
                      max_iter=20,
@@ -71,13 +89,26 @@ class LumynFinOpsCrew():
                 HumanCustomTool()
             ])
 
+    # @task
+    # def finops_data_query_task(self) -> Task:
+    #     return Task(
+    #         config=self.tasks_config["finops_data_query_task"],
+    #         verbose=True,
+    #         tools=[
+    #             NL2SQLClickHouseCustomTool(llm_backend=get_llm_backend_for_tools()),
+    #         ],
+    #         human_input=False)
+    
     @task
-    def finops_data_query_task(self) -> Task:
+    def finops_anomaly_detection_task(self) -> Task:
         return Task(
-            config=self.tasks_config["finops_data_query_task"],
+            config=self.tasks_config["finops_anomaly_detection_task"],
             verbose=True,
             tools=[
+                FileReadTool(file_path="./data/focus_data_table.csv", verbose=False),
                 NL2SQLClickHouseCustomTool(llm_backend=get_llm_backend_for_tools()),
+                FileWriterTool(file_path="./data/data_intermediate.csv"),
+                AnomalyDetectionCustomTool()
             ],
             human_input=False)
 

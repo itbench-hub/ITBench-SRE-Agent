@@ -9,6 +9,7 @@ NL2LogsCustomToolInputPrompt="NL query to execute."
 NL2LogsCustomToolPrompt="Converts natural language to LogQL queries and executes them to access logs (and other information) from Loki via the Grafana API. When using the NL2Logs Tool you could ask queries like: get the logs from the payment deployment get the logs from the worker-node-1 kubernetes host get the logs from the payment service with label app=payment NL2Logs only works for logs from services using their app name."
 NL2SQLCustomToolInputPrompt="Natural language query to convert to a ClickHouse SQL query/statement."
 NL2SQLCustomToolPrompt="Converts natural language queries into ClickHouse SQL statements and executes them to retrieve data from ClickHouse databases."
+AnomalyDetectionCustomToolPrompt="Runs an anomaly detector on a file at a given location."
 
 # ICL
 NL2KubectlICL="""

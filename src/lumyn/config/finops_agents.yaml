@@ -16,5 +16,14 @@ finops_data_query_agent:
     For any charge, ChargePeriodStart and ChargePeriodEnd shows the time interval for charge.
     To retrive the actual cost, use EffectiveCost field.
     Use the UTC+4 time zone in all analysis steps.
+    Once you have the information use the FileWriterTool to write the data to a file in CSV.
   backstory: >
     You are a smart and capable tool using agent. You are an expert at querying the data.
+
+finops_anomaly_detection_agent:
+  role: finops_anomaly_detection_agent
+  goal: >
+    Given the data written to ./data/intermediate_data.csv
+    run AnomalyDetectionCustomTool to detect anomalies on it.
+  backstory: >
+    You are a smart and capable tool using agent. You are an expert at anomaly detection.

@@ -52,12 +52,12 @@ class AnomalyDetectionCustomTool(BaseTool):
 
     def _run(self) -> str:
         try:
-            df = pd.read_csv('../../../data/intermediate_data.csv')
+            df = pd.read_csv('intermediate_data.csv')
 
             iso_forest = IsolationForest(n_estimators=125)
-            grouped_sum_hour = df.groupby(['start_date', 'start_time', 'ChargePeriodStart'])[['BilledCost', 'ContractedCost', 'ContractedUnitPrice', 'EffectiveCost', 'ListCost', 'ListUnitPrice', 'period' ]].sum()
+            grouped_sum_hour = df.groupby(['ChargePeriodStart'])[['BilledCost']].sum()
 
-            iso_df = self.fit_model(iso_forest, grouped_sum_hour, 'EffectiveCost')
+            iso_df = self.fit_model(iso_forest, grouped_sum_hour, 'BilledCost')
             iso_df['Predictions'] = iso_df['Predictions'].map(lambda x: 1 if x==-1 else 0)
             return iso_df.values.tolist()
         except Exception as exc:

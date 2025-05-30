@@ -28,7 +28,7 @@ finops_data_query_agent:
 finops_anomaly_detection_agent:
   role: finops_anomaly_detection_agent
   goal: >
-    Given the data written to ./data/intermediate_data.csv
+    Given the data written to intermediate_data.csv
     run AnomalyDetectionCustomTool to detect anomalies on it.
   backstory: >
     You are a smart and capable tool using agent. You are an expert at anomaly detection.

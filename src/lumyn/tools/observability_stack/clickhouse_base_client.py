@@ -18,6 +18,8 @@ import os
 from typing import Any, List, Optional
 import mysql.connector
 
+import csv
+
 import clickhouse_connect
 
 logging.basicConfig(
@@ -72,11 +74,24 @@ class ClickHouseBaseClient:
             # result = self.client.query(query)
             print("****************Executing query *************")
             self.cursor.execute(query)
-            result=self.cursor.fetchall()
-            print("+++++++++++++++++++++++++++++++++")
-            print("result: ",result)
-            print("+++++++++++++++++++++++++++++++")
-            return result
+            # result=self.cursor.fetchall()
+            
+            result = self.cursor.fetchall()
+            columns = [desc[0] for desc in self.cursor.description]  # Column headers
+
+            # Write results to a CSV file locally
+            with open('intermediate_data.csv', mode='w', newline='', encoding='utf-8') as file:
+                writer = csv.writer(file)
+                writer.writerow(columns)  # Write headers
+                writer.writerows(result)    # Write data rows
+
+
+
+            # print("+++++++++++++++++++++++++++++++++")
+            # print("result: ",result)
+            # print("+++++++++++++++++++++++++++++++")
+            # return result
+            return "File saved!!"
             # return result.result_rows
             # print("cursor output: ", self.cursor.fetchall())
             # return self.cursor.fetchall()

@@ -37,7 +37,6 @@ if "STRUCTURED_UNSTRUCTURED_OUTPUT_DIRECTORY_PATH" in os.environ:
     agent_analytics_sdk.initialize_logging(logs_dir_path=logs_dir_path,
                                            log_filename=log_filename)
 
-# agent_analytics_sdk.initialize_logging()
 
 def run():
     """

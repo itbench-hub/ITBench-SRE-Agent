@@ -57,7 +57,7 @@ class LumynFinOpsCrew():
                      llm=get_llm_backend_for_agents(),
                      tools=[
                         NL2SQLClickHouseCustomTool(llm_backend=get_llm_backend_for_tools()),
-                        FileWriterTool(file_path="./data/data_intermediate.csv")
+                        # FileWriterTool(file_path="./data/data_intermediate.csv")
                      ],
                      allow_delegation=False,
                      max_iter=20,
@@ -87,8 +87,8 @@ class LumynFinOpsCrew():
             config=self.tasks_config["finops_human_input_query_task"],
             verbose=True,
             tools=[
-                # HumanCustomTool()
-                FileReadTool(file_path='finops_prompt.txt')
+                HumanCustomTool()
+                # FileReadTool(file_path='finops_prompt.txt')
 
             ])
 
@@ -108,9 +108,9 @@ class LumynFinOpsCrew():
             config=self.tasks_config["finops_anomaly_detection_task"],
             verbose=True,
             tools=[
-                FileReadTool(file_path="./data/focus_data_table.csv", verbose=False),
+                # FileReadTool(file_path="./data/focus_data_table.csv", verbose=False),
                 NL2SQLClickHouseCustomTool(llm_backend=get_llm_backend_for_tools()),
-                FileWriterTool(file_path="./data/data_intermediate.csv"),
+                # FileWriterTool(file_path="./data/data_intermediate.csv"),
                 AnomalyDetectionCustomTool()
             ],
             human_input=False)

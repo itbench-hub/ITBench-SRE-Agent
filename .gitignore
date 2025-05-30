@@ -147,3 +147,5 @@ instana.toml
 finops_prompt.txt
 irl-sre-bench-test-m4.xlarge-aws.k8s.local.yaml
 run_scenarios.py
+data/*
+intermediate_data.csv

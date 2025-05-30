@@ -220,7 +220,7 @@ def get_llm_backend_for_agents():
                    top_p=TOP_P_AGENTS,
                    temperature=TEMPERATURE_AGENTS,
                    reasoning_effort=REASONING_EFFORT_AGENTS,
-                   max_tokens=MAX_TOKENS_AGENTS,
+                   max_completion_tokens=MAX_TOKENS_AGENTS,
                    )
 
 

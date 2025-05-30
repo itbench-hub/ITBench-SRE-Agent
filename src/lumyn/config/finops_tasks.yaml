@@ -7,9 +7,9 @@ finops_human_input_query_task:
 
 finops_data_query_task:
   description: >
-    Given a request in natural language return the relevant data from ClickHouse
+    Given a request in natural language return the relevant data from MySQL
   expected_output: >
-    A report with summary of the returned data
+    Return output data from the query.
   agent: finops_data_query_agent
 
 finops_anomaly_detection_task:

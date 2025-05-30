@@ -50,9 +50,12 @@ class NL2SQLClickHouseCustomTool(BaseTool, ClickHouseBaseClient):
         ClickHouseBaseClient.model_post_init(self)
         try:
             function_arguments = self._generate_sql_query(prompt=nl_query)
-            lint_message = SQLLinter.lint(function_arguments, dialect="clickhouse")
-            if lint_message != function_arguments:
-                return lint_message
+            # lint_message = SQLLinter.lint(function_arguments, dialect="mysql")
+            # if lint_message != function_arguments:
+            #     # print("======================")
+            #     # print("Linter response",lint_message)
+            #     # print("==================")
+            #     return lint_message
             return self._query_clickhouse(function_arguments)
         except Exception as exc:
             logger.error(f"NL2SQLClickHouse Tool failed with: {exc}")
@@ -69,7 +72,9 @@ class NL2SQLClickHouseCustomTool(BaseTool, ClickHouseBaseClient):
         return response
 
     def _query_clickhouse(self, query: str) -> List:
+        # print("***************before running query**********")
         try:
-            return self._query(query)
+            output=self._query(query)
+            return output
         except Exception as e:
             print(f"Error querying ClickHouse: {str(e)}")

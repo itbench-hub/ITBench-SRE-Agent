@@ -95,7 +95,7 @@ class LiteLLMBackend():
             "temperature": self.temperature,
             "top_p": self.top_p,
             "reasoning_effort": self.reasoning_effort,
-            "max_tokens": self.max_tokens,
+            "max_completion_tokens": self.max_tokens,
             "messages": messages,
             "extra_headers": self.extra_headers
         }

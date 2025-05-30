@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 from lumyn.llm_backends.init_backend import (get_llm_backend_for_agents,
                                                     get_llm_backend_for_tools)
 from lumyn.tools.human_tool import HumanCustomTool
+from crewai_tools import FileReadTool
 from lumyn.tools.observability_stack.clickhouse_nl2sql import NL2SQLClickHouseCustomTool
 from lumyn.tools.anomaly_detection import AnomalyDetectionCustomTool
 
@@ -86,7 +87,9 @@ class LumynFinOpsCrew():
             config=self.tasks_config["finops_human_input_query_task"],
             verbose=True,
             tools=[
-                HumanCustomTool()
+                # HumanCustomTool()
+                FileReadTool(file_path='finops_prompt.txt')
+
             ])
 
     # @task

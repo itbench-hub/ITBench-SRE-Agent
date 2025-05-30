@@ -16,6 +16,7 @@
 import logging
 import os
 from typing import Any, List, Optional
+import mysql.connector
 
 import clickhouse_connect
 
@@ -34,6 +35,8 @@ class ClickHouseBaseClient:
     clickhouse_username: Optional[str] = None
     clickhouse_password: Optional[str] = None
     client: Optional[Any] = None
+    cursor: Optional[Any] = None
+    connection: Optional[Any] = None
 
     def model_post_init(self):
         self.clickhouse_url = os.environ.get("OBSERVABILITY_STACK_URL")
@@ -46,18 +49,37 @@ class ClickHouseBaseClient:
                 "Observability Stack URL-ClickHouse URL, username and password must be provided through environment variables"
             )
 
-        self.client = clickhouse_connect.get_client(host=self.clickhouse_url,
-                                                    port=self.clickhouse_port,
-                                                    proxy_path="clickhouse",
-                                                    username=self.clickhouse_username,
-                                                    password=self.clickhouse_password,
-                                                    query_retries=RETRY_TOTAL,
-                                                    connect_timeout=REQUEST_TIMEOUT)
+        # self.client = clickhouse_connect.get_client(host=self.clickhouse_url,
+        #                                             port=self.clickhouse_port,
+        #                                             proxy_path="clickhouse",
+        #                                             username=self.clickhouse_username,
+        #                                             password=self.clickhouse_password,
+        #                                             query_retries=RETRY_TOTAL,
+        #                                             connect_timeout=REQUEST_TIMEOUT)
+        db_config = {
+               'host': os.environ.get("MYSQL_HOST"),
+                'user': os.environ.get("MYSQL_USER"),  # Replace with your MySQL username
+                'password': os.environ.get("MYSQL_PASS"),  # Replace with your MySQL password
+                'database': os.environ.get("MYSQL_DB")  # Replace with your database name
+        }
+        self.connection = mysql.connector.connect(**db_config)
+        self.cursor = self.connection.cursor()
+
+
 
     def _query(self, query: str) -> List:
         try:
-            result = self.client.query(query)
-            return result.result_rows
+            # result = self.client.query(query)
+            print("****************Executing query *************")
+            self.cursor.execute(query)
+            result=self.cursor.fetchall()
+            print("+++++++++++++++++++++++++++++++++")
+            print("result: ",result)
+            print("+++++++++++++++++++++++++++++++")
+            return result
+            # return result.result_rows
+            # print("cursor output: ", self.cursor.fetchall())
+            # return self.cursor.fetchall()
         except Exception as e:
             logger.error(f"Request to ClickHouse failed: {e}")
             raise

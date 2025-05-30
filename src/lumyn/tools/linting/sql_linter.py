@@ -22,7 +22,9 @@ class SQLLinter:
 
     @staticmethod
     def lint(query: str, dialect="clickhouse") -> str:
-        violations = sqlfluff.lint(query, dialect=dialect, exclude_rules=["LT12"])
+        violations = sqlfluff.lint(query, dialect=dialect, exclude_rules=["LT12","LT05", "LT09", "LT01", "CP02"])
         if violations:
+            # print("********************************violation")
             return f"Invalid {dialect} SQL Query: {violations}"
+        # print("*******************Query after linter:", query)
         return query

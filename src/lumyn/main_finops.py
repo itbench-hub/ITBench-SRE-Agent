@@ -17,13 +17,27 @@
 import json
 import sys
 import subprocess
-
+from agent_analytics.instrumentation import agent_analytics_sdk 
 from lumyn.crew_finops import LumynFinOpsCrew
+import os
+from datetime import datetime
 
 # This main file is intended to be a way for your to run your
 # crew locally, so refrain from adding necessary logic into this file.
 # Replace with inputs you want to test with, it will automatically
 # interpolate any tasks and agents information
+
+
+if "STRUCTURED_UNSTRUCTURED_OUTPUT_DIRECTORY_PATH" in os.environ:
+    logs_dir_path = os.getenv("STRUCTURED_UNSTRUCTURED_OUTPUT_DIRECTORY_PATH")
+    # log_filename = "agent_analytics_sdk_logs"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f"agent_analytics_sdk_logs_{timestamp}"
+    # Initialize logging with agent_analytics_sdk
+    agent_analytics_sdk.initialize_logging(logs_dir_path=logs_dir_path,
+                                           log_filename=log_filename)
+
+# agent_analytics_sdk.initialize_logging()
 
 def run():
     """

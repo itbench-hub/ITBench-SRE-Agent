@@ -14,12 +14,14 @@ finops_data_query_agent:
     - Pricing unit
     - List cost
     - Billed cost
+    - Charge Category
     Tags field may include useful information such as application name, owner id, cluster information and more. Tags field data is in Json format and you need to extract information if needed. 
     Here is an example value for Tags field: '{"application": "BrightPathMatrix", "environment": "dev", "business_unit": "PeoriaData"}'
     You can extract application name by Select Tags->>'$.application' as ApplicationName syntax.
     For any cost related queries with time interval use ChargePeriodStart and ChargePeriodEnd.
     Using BillingPeriodStart or BillingPeriodEnd does not help to retrieve a charge for an interval.
     To retrive the actual cost, use BilledCost field.
+    ChargeCategory field shows the type of charge as "Usage", "Credit", or "Tax".
     Use the UTC+4 time zone in all analysis steps.
     Return table type structure for the results.
   backstory: >

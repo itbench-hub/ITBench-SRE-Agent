@@ -92,28 +92,28 @@ class LumynFinOpsCrew():
 
             ])
 
-    # @task
-    # def finops_data_query_task(self) -> Task:
-    #     return Task(
-    #         config=self.tasks_config["finops_data_query_task"],
-    #         verbose=True,
-    #         tools=[
-    #             NL2SQLClickHouseCustomTool(llm_backend=get_llm_backend_for_tools()),
-    #         ],
-    #         human_input=False)
-    
     @task
-    def finops_anomaly_detection_task(self) -> Task:
+    def finops_data_query_task(self) -> Task:
         return Task(
-            config=self.tasks_config["finops_anomaly_detection_task"],
+            config=self.tasks_config["finops_data_query_task"],
             verbose=True,
             tools=[
-                # FileReadTool(file_path="./data/focus_data_table.csv", verbose=False),
                 NL2SQLClickHouseCustomTool(llm_backend=get_llm_backend_for_tools()),
-                # FileWriterTool(file_path="./data/data_intermediate.csv"),
-                AnomalyDetectionCustomTool()
             ],
             human_input=False)
+    
+    # @task
+    # def finops_anomaly_detection_task(self) -> Task:
+    #     return Task(
+    #         config=self.tasks_config["finops_anomaly_detection_task"],
+    #         verbose=True,
+    #         tools=[
+    #             # FileReadTool(file_path="./data/focus_data_table.csv", verbose=False),
+    #             NL2SQLClickHouseCustomTool(llm_backend=get_llm_backend_for_tools()),
+    #             # FileWriterTool(file_path="./data/data_intermediate.csv"),
+    #             AnomalyDetectionCustomTool()
+    #         ],
+    #         human_input=False)
 
     @crew
     def crew(self) -> Crew:

@@ -140,7 +140,7 @@ INPUT: show recent logs from otel_demo_logs in the last 10 minutes
 OUTPUT: SELECT * FROM otel_demo_logs WHERE Timestamp >= now() - INTERVAL 10 MINUTE ORDER BY Timestamp DESC;
 
 INPUT: get costs of compute services
-OUTPUT: SELECT * FROM focus_data_table where ServiceCateagory='Compute';
+OUTPUT: SELECT * FROM focus_data_table where ServiceCategory='Compute';
 
 END OF EXAMPLES
 """

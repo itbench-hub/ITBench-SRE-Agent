@@ -56,6 +56,19 @@ class LiteLLMBackend():
         self.extra_headers = extra_headers
         litellm.drop_params = True
 
+    def parse_tool_response(self, response: str):
+        function_regex = r"<function=(\w+)>(.*?)</function>"
+        match = re.search(function_regex, response)
+
+        if match:
+            function_name, args_string = match.groups()
+            try:
+                args = json.loads(args_string)
+                return function_name, args
+            except json.JSONDecodeError as error:
+                print(f"Error parsing function arguments: {error}")
+                return None, None
+        return None, None
 
     def inference(self, system_prompt: str, input: str, tools: Optional[list[any]] = None) -> str:
         logger.info(f"NL input received: {input}")
@@ -107,6 +120,15 @@ class LiteLLMBackend():
             kwargs["thinking"] = { "type": "enabled", "budget_tokens": self.thinking_budget_tools }
             kwargs.pop("top_p")
 
+        elif self.thinking_tools == "gemini":
+            kwargs["thinking"] = { "type": "enabled", "budget_tokens": self.thinking_budget_tools }
+            kwargs.pop("top_p")
+            kwargs.pop("reasoning_effort")
+
+        # elif not self.thinking_tools:
+        #     kwargs.pop("thinking")
+        #     kwargs.pop("reasoning_effort")
+
         completion = litellm.completion(**kwargs)
 
         finish_reason = completion.choices[0].finish_reason
@@ -114,5 +136,11 @@ class LiteLLMBackend():
             function_name = completion.choices[0].message.tool_calls[0].function.name
             function_arguments = json.loads(completion.choices[0].message.tool_calls[0].function.arguments)
             return function_name, function_arguments
+        elif tools and finish_reason == "stop":
+            function_name, function_arguments = self.parse_tool_response(completion.choices[0].message.content)
+            if function_name is not None and function_arguments is not None:
+                return function_name, function_arguments
+            else:
+                return completion.choices[0].message.content
         else:
             return completion.choices[0].message.content

@@ -104,9 +104,8 @@ def run():
     except:
         print("no memories to clear")
 
-    kubectl_otel_astronomy_shop = NL2KubectlCustomTool(llm_backend=get_llm_backend_for_tools())._execute_kubectl_command("kubectl get pods -n otel-demo")
-    kubectl_dsb_hotel_researvation = NL2KubectlCustomTool(llm_backend=get_llm_backend_for_tools())._execute_kubectl_command("kubectl get pods -n hotel-reservation")
-    if kubectl_otel_astronomy_shop[1] != 0 and kubectl_dsb_hotel_researvation[1] !=0:
+    kubectl = NL2KubectlCustomTool(llm_backend=get_llm_backend_for_tools())._execute_kubectl_command("kubectl cluster-info")
+    if kubectl[1] != 0:
         raise Exception("KUBECONFIG is not configured correctly.")
 
     while True:

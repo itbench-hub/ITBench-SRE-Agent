@@ -211,6 +211,26 @@ def get_llm_backend_for_agents():
                    max_tokens=MAX_TOKENS_AGENTS,
                    thinking={ "type": "enabled", "budget_tokens": int(THINKING_BUDGET_TOOLS) }
                    )
+    elif THINKING_AGENTS == "gemini":
+        return LLM(model=f"{PROVIDER_AGENTS}/{MODEL_AGENTS}",
+                    base_url=URL_AGENTS,
+                    api_key=API_KEY_AGENTS,
+                    api_version=API_VERSION_AGENTS,
+                    seed=SEED_AGENTS,
+                    temperature=TEMPERATURE_AGENTS,
+                    max_tokens=MAX_TOKENS_AGENTS,
+                    thinking={ "type": "enabled", "budget_tokens": int(THINKING_BUDGET_TOOLS) }
+                    )
+    elif not THINKING_AGENTS and PROVIDER_AGENTS=="gemini":
+        return LLM(model=f"{PROVIDER_AGENTS}/{MODEL_AGENTS}",
+                   base_url=URL_AGENTS,
+                   api_key=API_KEY_AGENTS,
+                   api_version=API_VERSION_AGENTS,
+                   seed=SEED_AGENTS,
+                   top_p=TOP_P_AGENTS,
+                   temperature=TEMPERATURE_AGENTS,
+                   max_tokens=MAX_TOKENS_AGENTS,
+                   )
     else:
         return LLM(model=f"{PROVIDER_AGENTS}/{MODEL_AGENTS}",
                    base_url=URL_AGENTS,

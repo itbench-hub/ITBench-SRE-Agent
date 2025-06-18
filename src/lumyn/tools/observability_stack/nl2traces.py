@@ -68,7 +68,12 @@ class NL2TracesCustomTool(BaseTool, ObservabilityStackBaseClient):
     def _generate_jaeger_query(self, prompt: str) -> str:
         time_micro = int(time.time_ns() / 1000)
         tools = [fd_query_jaeger_traces]
-        function_name, function_arguments = self.llm_backend.inference(NL2TracesSystemPrompt, NL2TracesPrompt + prompt + f"\nThe current time in microseconds is {time_micro}", tools)
+        llm_response =  self.llm_backend.inference(NL2TracesSystemPrompt, NL2TracesPrompt + prompt + f"\nThe current time in microseconds is {time_micro}", tools)
+        try:
+            function_name, function_arguments = llm_response
+        except:
+            function_name = "query_jaeger_traces"
+            function_arguments = json.loads(llm_response)
         logger.info(f"NL2Traces Tool NL prompt received: {prompt}")
         logger.info(
             f"NL2Traces Tool function arguments identified are: {function_name} {function_arguments}"

@@ -16,20 +16,17 @@ run:
 
     # build agent input
     jq -r .kubeconfig ${tmpdir}/scenario_data.json > ${tmpdir}/kubeconfig.yaml
-    prometheus_url=$(jq -r .prometheus_url ${tmpdir}/scenario_data.json)
-    base_url=${prometheus_url%/prometheus}
-
+    grafana_url=$(jq -r .grafana_url ${tmpdir}/scenario_data.json)
     export KUBECONFIG=${tmpdir}/kubeconfig.yaml
-    export OBSERVABILITY_STACK_URL=${base_url}
-    export TOPOLOGY_URL=${base_url}/topology
-
+    export GRAFANA_URL=${grafana_url}
+    export TOPOLOGY_URL=${grafana_url}
     # run agent
-    cd /etc/lumyn && crewai run > /tmp/agent_run.out 2>&1
+    crewai run > /tmp/agent_run.out 2>&1
     # finish agent
     
     # Copy the output file to <path_to_data_pushed_to_scenario>
-    if [ -f /etc/lumyn/outputs/agent_evaluation/agent_output.json ]; then
-      cp /etc/lumyn/outputs/agent_evaluation/agent_output.json /tmp/agent/agent_output.data
+    if [ -f /app/lumyn/outputs/agent_evaluation/agent_output.json ]; then
+      cp /app/lumyn/outputs/agent_evaluation/agent_output.json /tmp/agent/agent_output.data
     else
       echo "Agent output file does not exist, skipping copy"
     fi

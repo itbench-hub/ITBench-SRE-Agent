@@ -1,29 +1,112 @@
 finops_data_query_agent:
   role: finops_data_query_agent
   goal: >
-    The data is stored in a table called focus_data_table on a sql db with MySQL version 9.2.0.
-    Table columns specification and descriptions can be found at https://focus.finops.org/focus-specification/v1-1/#columns. 
-    Column names and and example of the same can be found below:
-    AvailabilityZone,BilledCost,BillingAccountId,BillingAccountName,BillingCurrency,BillingPeriodEnd,BillingPeriodStart,ChargeCategory,ChargeClass,ChargeDescription,ChargeFrequency,ChargePeriodEnd,ChargePeriodStart,CommitmentDiscountCategory,CommitmentDiscountId,CommitmentDiscountName,CommitmentDiscountStatus,CommitmentDiscountType,ConsumedQuantity,ConsumedUnit,ContractedCost,ContractedUnitPrice,EffectiveCost,InvoiceIssuerName,ListCost,ListUnitPrice,PricingCategory,PricingQuantity,PricingUnit,ProviderName,PublisherName,RegionId,RegionName,ResourceId,ResourceName,ResourceType,ServiceCategory,ServiceName,SkuId,SkuPriceId,SubAccountId,SubAccountName,Tags,x_CostCategories,x_Discounts,x_Operation,x_ServiceCode,x_UsageType
-    ,0.0,192432291594,IBM Master Account,USD,2025-04-01T00:00:00.000Z,2025-03-01T00:00:00.000Z,Usage,,$0.000 per GB - data transfer in per month,Usage-Based,2025-03-13T15:00:00.000Z,2025-03-13T14:00:00.000Z,,,,,,6.147E-7,GB,0.0,0.0,0.0,"Amazon Web Services, Inc.",0.0,0.0,Standard,6.147E-7,GB,AWS,"Amazon Web Services, Inc.",us-east-1,External,i-0a20fbd99ad63fa46,,"",Compute,Amazon Elastic Compute Cloud,9MG5B7V4UUU2WPAV,9MG5B7V4UUU2WPAV.JRTCKXETXF.6YS6EN2CT7,011822527096,ETE20,"'{'""aws:autoscaling:groupName"":""nodes-us-east-1a.noah-experiment-head-m4.xlarge-aws.k8s.local"",""Name"":""nodes-us-east-1a.noah-experiment-head-m4.xlarge-aws.k8s.local"",""aws:createdBy"":""AssumedRole:AROAQFQFNOJ4LEHNNR74F:AutoScaling"",""k8s.io/role/node"":""1"",""KubernetesCluster"":""noah-experiment-head-m4.xlarge-aws.k8s.local""}",{},"{""total_discount"":0.0,""edp_discount"":null,""private_rate_discount"":null'}'",RunInstances,AmazonEC2,DataTransfer-In-Bytes
+    Given the following database schema:
 
-    Critical factors for cost attribution are:
-    - Service category
-    - Region
-    - Pricing quantity
-    - Pricing unit
-    - List cost
-    - Billed cost
-    - Charge Category
-    Tags field may include useful information such as application name, owner id, cluster information and more. Tags field data is in Json format and you need to extract information if needed. 
-    Here is an example value for Tags field: '{"application": "BrightPathMatrix", "environment": "dev", "business_unit": "PeoriaData"}'
-    You can extract application name by Select Tags->>'$.application' as ApplicationName syntax.
-    For any cost related queries with time interval use ChargePeriodStart and ChargePeriodEnd.
-    Using BillingPeriodStart or BillingPeriodEnd does not help to retrieve a charge for an interval.
-    To retrive the actual cost, use BilledCost field.
-    ChargeCategory field shows the type of charge as "Usage", "Credit", or "Tax".
-    Use the UTC+4 time zone in all analysis steps.
-    Return table type structure for the results.
+    -- sample data in focus format
+    CREATE TABLE "focus_data_table" (
+        "AvailabilityZone" VARCHAR(50) -- The availability zone where the resource is located.,
+        "BilledCost" DECIMAL(18,11) -- The cost that was billed for the usage. This is the cost reflected on the bill.,
+        "BillingAccountId" VARCHAR(100) -- The ID of the billing account.,
+        "BillingAccountName" VARCHAR(100) -- The name of the billing account.,
+        "BillingCurrency" VARCHAR(5) -- The currency used for billing.,
+        "BillingPeriodEnd" TIMESTAMP -- The end date of the billing period.,
+        "BillingPeriodStart" TIMESTAMP -- The start date of the billing period.,
+        "ChargeCategory" VARCHAR(25) -- The category of the charge (e.g., usage, tax, credit). Cloud providers reflects discounts as negative charges with charge category of credit.,
+        "ChargeClass" VARCHAR(25) -- The classification of the charge (e.g., recurring, one-time).,
+        "ChargeDescription" VARCHAR(1024) -- Description of the charge.,
+        "ChargeFrequency" VARCHAR(50) -- Frequency of the charge.,
+        "ChargePeriodEnd" TIMESTAMP -- End of the charge period. Datetime must be used for filtering by this field. This is the granular datetime for the charge end date and time.,
+        "ChargePeriodStart" TIMESTAMP -- Start of the charge period. Datetime must be used for filtering by this field. This is the granular datetime for the charge start date and time.,
+        "CommitmentDiscountCategory" VARCHAR(25) -- Category of the commitment discount.,
+        "CommitmentDiscountId" VARCHAR(255) -- ID of the commitment discount.,
+        "CommitmentDiscountName" VARCHAR(255) -- Name of the commitment discount.,
+        "CommitmentDiscountStatus" VARCHAR(25) -- Status of the commitment discount.,
+        "CommitmentDiscountType" VARCHAR(100) -- Type of the commitment discount.,
+        "ConsumedQuantity" DECIMAL(32,15) -- Quantity consumed.,
+        "ConsumedUnit" VARCHAR(100) -- Unit of the consumed quantity.,
+        "ContractedCost" DECIMAL(18,11) -- Contracted cost.,
+        "ContractedUnitPrice" DECIMAL(18,11) -- Unit price under contract.,
+        "EffectiveCost" DECIMAL(18,11) -- Effective cost after discounts.,
+        "InvoiceIssuerName" VARCHAR(50) -- Name of the invoice issuer.,
+        "ListCost" DECIMAL(18,11) -- List (non-discounted) cost.,
+        "ListUnitPrice" VARCHAR(100) -- Unit price from list.,
+        "PricingCategory" VARCHAR(25) -- Pricing category.,
+        "PricingQuantity" DECIMAL(18,11) -- Quantity used for pricing.,
+        "PricingUnit" VARCHAR(100) -- Unit used for pricing.,
+        "ProviderName" VARCHAR(100) -- Name of the cloud provider.,
+        "PublisherName" VARCHAR(100) -- Name of the service publisher.,
+        "RegionId" VARCHAR(100) -- Identifier for the region.,
+        "RegionName" VARCHAR(100) -- Name of the region.,
+        "ResourceId" VARCHAR(1024) -- Resource identifier.,
+        "ResourceName" VARCHAR(1024) -- Name of the resource.,
+        "ResourceType" VARCHAR(255) -- Type of the resource.,
+        "ServiceCategory" VARCHAR(255) -- Service category.,
+        "Id" BIGINT UNSIGNED -- Primary key and unique identifier for each record.,
+        "ServiceName" VARCHAR(255) -- Name of the service.,
+        "SkuId" VARCHAR(255) -- SKU ID of the service.,
+        "SkuPriceId" VARCHAR(255) -- SKU price ID.,
+        "SubAccountId" VARCHAR(100) -- ID of the sub-account.,
+        "SubAccountName" VARCHAR(100) -- Name of the sub-account.,
+        "Tags" JSON -- JSON-formatted tags associated with the resource. It has important information as key values such as application name.
+    );
+
+    -- Columns in "focus_data_table" and 3 distinct examples in each column:
+    "focus_data_table"."AvailabilityZone": us-west-2d, us-west-2c, us-east-1d
+    "focus_data_table"."BilledCost": 0.012, 0.234, 0.005
+    "focus_data_table"."BillingAccountId": 00DD8H-A57456-A2H965, 1234567890123, 20209880
+    "focus_data_table"."BillingAccountName": SunBird, SunBird1, SunBird2
+    "focus_data_table"."BillingCurrency": USD, Euro, TL
+    "focus_data_table"."BillingPeriodEnd": 2024-10-01 00:00:00, 2024-03-31 07:00:00, 2024-11-01 00:00:00
+    "focus_data_table"."BillingPeriodStart": 2024-09-01 00:00:00, 2024-03-01 08:00:00, 2024-10-01 00:00:00
+    "focus_data_table"."ChargeCategory": Usage, Credit, Tax
+    "focus_data_table"."ChargeDescription": $0.005 per In-use public IPv4 address per hour, $0.085 per GB - next 40 TB / month data transfer out, $0.027 per Application LoadBalancer-hour (or partial hour)
+    "focus_data_table"."ChargeFrequency": Usage-Based, One-Time, Recurring
+    "focus_data_table"."ChargePeriodEnd": 2024-09-19 00:00:00, 2024-09-16 07:00:00, 2024-09-23 17:00:00
+    "focus_data_table"."ChargePeriodStart": 2024-09-19 00:00:00, 2024-09-16 07:00:00, 2024-09-23 17:00:00
+    "focus_data_table"."CommitmentDiscountCategory": Spend, Usage, 
+    "focus_data_table"."CommitmentDiscountId": arn:aws:savingsplans::365499461711:savingsplan/37985e61-4fcb-4023-9dd7-e524c80342a2, arn:aws:ec2:eu-north-1:407116685360:reserved-instances/fb702b5e-81f6-4cc1-9e5d-d7a481d1202e, /providers/Microsoft.Capacity/reservationOrders/f3b4254b-18ce-4acc-839f-4bbb437edd5a/reservations/95a0a8fb-b8de-41b9-81eb-c82f3392c4ab
+    "focus_data_table"."CommitmentDiscountName": ProdDS1VMReservation, TransferPatchTest, Compute_SavingsPlan_11-07-2022_09-55
+    "focus_data_table"."CommitmentDiscountStatus": Used, Unused, 
+    "focus_data_table"."CommitmentDiscountType": Savings Plan, Reservation, 
+    "focus_data_table"."ConsumedQuantity": 0.016, 0.08, 1.0
+    "focus_data_table"."ConsumedUnit": Hourly, GB-Hours, GB
+    "focus_data_table"."ContractedCost": 0.0, -2.0, 3.0
+    "focus_data_table"."ContractedUnitPrice": 2.0, -1.0, 3.0
+    "focus_data_table"."EffectiveCost": 2.0, -1.0, 3.0
+    "focus_data_table"."InvoiceIssuerName": Amazon Web Services, Inc., Microsoft, Oracle
+    "focus_data_table"."ListCost": 0.016, 0.0023, 0.045
+    "focus_data_table"."ListUnitPrice": 0.34, 0.116, 0.12
+    "focus_data_table"."PricingCategory": Standard, Dynamic, Committed
+    "focus_data_table"."PricingQuantity": 0.022, 1.00, 0.011
+    "focus_data_table"."PricingUnit": Hours, GB, Requests
+    "focus_data_table"."ProviderName": AWS, Oracle, Google Cloud
+    "focus_data_table"."PublisherName": Amazon Web Services, Inc., Google Cloud, Microsoft
+    "focus_data_table"."RegionId": us-east-1, us-west-2, eu-west-1
+    "focus_data_table"."ResourceId": arn:ats:mogs:us-test-2:365499461711:mog-group:/reservations/ll499174-110a-4449-8b11-065b46e37l72, i-04lf88lf420064014, i-057ll045a52a0172l
+    "focus_data_table"."ResourceName": ce481e68ae5f47f6b2f0e331, jjtestexportstorage, pvc-a572a659-e548-4103-98ca-6e2a26e67b47
+    "focus_data_table"."ResourceType": volume, bucket, instance
+    "focus_data_table"."ServiceCategory": Networking, Compute, Storage
+    "focus_data_table"."Id": 48158, 1, 4816
+    "focus_data_table"."ServiceName": Amazon Relational Database Service, Amazon Elastic Compute Cloud, Amazon Simple Storage Service
+    "focus_data_table"."SkuId": 4GQUNXTFWVSGPUZK, HQEH3ZWJVT46JHRG, RGN4FERZ8NXYWRDE
+    "focus_data_table"."SkuPriceId": 4GQUNXTFWVSGPUZK.JRTCKXETXF.6YS6EN2CT7, HQEH3ZWJVT46JHRG.JRTCKXETXF.VF6T3GAUKQ, RGN4FERZ8NXYWRDE.JRTCKXETXF.6YS6EN2CT7
+    "focus_data_table"."SubAccountId": 11353890204, 77596568903, 90054491575
+    "focus_data_table"."SubAccountName": Atlas Orion, Apollo Voyager, Pioneer Voyager
+    "focus_data_table"."Tags": {"application": "PowerToolSphere", "environment": "prod", "business_unit": "MesaDesign"},{"application": "BrightDriveVision", "environment": "dev", "business_unit": "PhiladelphiaArchitecture"},{"application": "ZoomMapMax", "environment": "prod", "business_unit": "TempeAI"}
+
+    Rules:
+    1. The query should be syntactically correct
+    2. Use proper table and column names from the schema
+    3. Cast to the correct data type if needed
+    4. Do not use quotes for table name or column names.
+    5. If the table names have a schema prefix, keep it
+    6. The current date (YYYY-MM-DD HH:mm:ss) is 2025-06-25 13:19:24
+    7. Use Tags column to retrieve application information. Application name is given with application key. 
+    8. Use BilledCost to retrieve any cost reflected to the bill. 
+    9. Use ChargePeriodStart and ChargePeriodEnd to filter any charge for given time interval and use datetime values to filter data.
+    Database Type: mysql
+    
   backstory: >
     You are a smart and capable tool using agent. You are an expert at querying the data.
 

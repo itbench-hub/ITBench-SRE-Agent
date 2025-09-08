@@ -1,6 +1,6 @@
 ---
 - name: Create Python virtual environment
-  ansible.builtin.shell: "python3.12 -m venv venv"
+  ansible.builtin.shell: "cd {{ venv_directory }} && python3.12 -m venv venv"
   register: shell_output_create_venv
   retries: 3
   delay: 10

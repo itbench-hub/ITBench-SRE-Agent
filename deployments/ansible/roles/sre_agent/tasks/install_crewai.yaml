@@ -1,6 +1,6 @@
 ---
 - name: Install CrewAI and CrewAI tools
-  ansible.builtin.shell: "source {{ conda_sh_directory }} && conda activate {{ conda_env_directory }} && pip install --no-input crewai && pip install --no-input crewai-tools"
+  ansible.builtin.shell: "source {{ venv_directory }}/bin/activate && pip install --no-input crewai && pip install --no-input crewai-tools"
   register: shell_output_crewai_install
   retries: 3
   delay: 10
@@ -9,7 +9,7 @@
     - sre_agent
 
 - name: Run CrewAI install
-  ansible.builtin.shell: "source {{ conda_sh_directory }} && conda activate {{ conda_env_directory }} && cd {{ sre_agent_directory }} && crewai install"
+  ansible.builtin.shell: "source {{ venv_directory }}/bin/activate && cd {{ sre_agent_directory }} && crewai install"
   register: shell_output_crewai_install_env
   retries: 3
   delay: 10

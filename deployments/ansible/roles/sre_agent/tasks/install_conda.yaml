@@ -1,15 +1,15 @@
 ---
-- name: Create a conda environment
-  ansible.builtin.shell: "conda create --prefix={{ conda_env_directory }} -y python=3.12"
-  register: shell_output_create_conda_env
+- name: Create Python virtual environment
+  ansible.builtin.shell: "python3.12 -m venv venv"
+  register: shell_output_create_venv
   retries: 3
   delay: 10
-  until: shell_output_create_conda_env.rc == 0
+  until: shell_output_create_venv.rc == 0
   tags:
     - sre_agent
 
 - name: Set up UV
-  ansible.builtin.shell: "source {{ conda_sh_directory }} && conda activate {{ conda_env_directory }} && pip install --no-input uv"
+  ansible.builtin.shell: "source {{ venv_directory }}/bin/activate && pip install --no-input uv"
   register: shell_output_setup_uv
   retries: 3
   delay: 10

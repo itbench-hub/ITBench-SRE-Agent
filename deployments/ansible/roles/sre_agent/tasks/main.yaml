@@ -1,4 +1,4 @@
 ---
-- import_tasks: install_conda.yaml
+- import_tasks: install_venv.yaml
 - import_tasks: install_crewai.yaml
 - import_tasks: run_crewai.yaml

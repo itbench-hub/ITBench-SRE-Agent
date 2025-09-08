@@ -186,7 +186,7 @@
 #     - sre_agent
 
 - name: Run CrewAI and log to file
-  ansible.builtin.shell: "source {{ conda_sh_directory }} && conda activate {{ conda_env_directory }} && cd {{ sre_agent_directory }} && crewai run >> {{ tempfile_for_crewai_run.path }}"
+  ansible.builtin.shell: "source {{ venv_directory }}/bin/activate && cd {{ sre_agent_directory }} && crewai run >> {{ tempfile_for_crewai_run.path }}"
   async: "{{ sre_agent_max_runtime_in_seconds }}"
   poll: 15
   ignore_errors: yes

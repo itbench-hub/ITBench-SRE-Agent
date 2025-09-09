@@ -74,7 +74,6 @@
       OBSERVABILITY_STACK_SERVICE_ACCOUNT_TOKEN="NOT_NEEDED"
       STRUCTURED_UNSTRUCTURED_OUTPUT_DIRECTORY_PATH="/runner/outputs"
       WX_PROJECT_ID="{{ wx_project_id }}"
-
   register: content_for_env
   tags:
     - sre_agent
@@ -144,30 +143,21 @@
 
 - name: Upload metadata to S3 (parent)
   amazon.aws.s3_object:
-    endpoint_url: "{{ s3_endpoint_url }}"
-    bucket: "{{ s3_bucket_name_for_results }}"
-    object: "/{{ sre_agent_name__version_number }}/{{run_uuid}}/{{ scenario_number }}/metadata"
+    endpoint_url: "{{ storage.s3.endpoint }}"
+    bucket: "{{ storage.s3.bucket }}"
+    object: "/{{ storage.s3.directory }}/metadata"
     src: "{{ sre_agent_directory }}/metadata"
     mode: put
   tags:
     - sre_agent
-  when: run_uuid is defined and scenario_number is defined and run_number is defined
 
 - name: Upload metadata to S3 (child)
   amazon.aws.s3_object:
-    endpoint_url: "{{ s3_endpoint_url }}"
-    bucket: "{{ s3_bucket_name_for_results }}"
-    object: "/{{ sre_agent_name__version_number }}/{{run_uuid}}/{{scenario_number}}/{{run_number}}/metadata"
+    endpoint_url: "{{ storage.s3.endpoint }}"
+    bucket: "{{ storage.s3.bucket }}"
+    object: "/{{ storage.s3.directory }}/metadata"
     src: "{{ sre_agent_directory }}/metadata"
     mode: put
-  tags:
-    - sre_agent
-  when: run_uuid is defined and scenario_number is defined and run_number is defined
-
-- name: Make sure directory to write the evaluations exists
-  ansible.builtin.file:
-    path: "{{ sre_agent_evaluation_directory }}/{{ sre_agent_name__version_number }}"
-    state: directory
   tags:
     - sre_agent
 
@@ -187,7 +177,7 @@
 
 - name: Run CrewAI and log to file
   ansible.builtin.shell: "source {{ venv_directory }}/bin/activate && cd {{ sre_agent_directory }} && crewai run >> {{ tempfile_for_crewai_run.path }}"
-  async: "{{ sre_agent_max_runtime_in_seconds }}"
+  async: 900
   poll: 15
   ignore_errors: yes
   tags:
@@ -200,33 +190,14 @@
   tags:
     - sre_agent
 
-- name: Record agent run or execution time completion
-  ansible.builtin.copy:
-    content: "{{ now(utc=true,fmt='%Y-%m-%dT%H:%M:%S.%f') }}"
-    dest: /tmp/agent_execution_completed_or_exited_at.txt
-  tags:
-    - sre_agent
-
 - name: Upload structured-unstructured outputs to S3
   community.aws.s3_sync:
-    endpoint_url: "{{ s3_endpoint_url }}"
-    bucket: "{{ s3_bucket_name_for_results }}"
+    endpoint_url: "{{ storage.s3.endpoint }}"
+    bucket: "{{ storage.s3.bucket }}"
     file_root: "/runner/outputs"
-    key_prefix: "{{ sre_agent_name__version_number }}/{{run_uuid}}/{{scenario_number}}/{{run_number}}/outputs"
+    key_prefix: "{{ storage.s3.directory }}/outputs"
   tags:
     - sre_agent
-  when: run_uuid is defined and scenario_number is defined and run_number is defined
-
-- name: Upload the agent_execution_completed_or_exited_at text to S3
-  amazon.aws.s3_object:
-    endpoint_url: "{{ s3_endpoint_url }}"
-    bucket: "{{ s3_bucket_name_for_results }}"
-    object: "/{{ sre_agent_name__version_number }}/{{run_uuid}}/{{scenario_number}}/{{run_number}}/agent_execution_completed_or_exited_at.txt"
-    src: "/tmp/agent_execution_completed_or_exited_at.txt"
-    mode: put
-  tags:
-    - sre_agent
-  when: run_uuid is defined and scenario_number is defined and run_number is defined
 
 - name: Remove the temporary file
   ansible.builtin.file:

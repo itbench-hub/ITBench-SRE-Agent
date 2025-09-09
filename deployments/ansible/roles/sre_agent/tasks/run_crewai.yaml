@@ -125,7 +125,6 @@
   register: content_for_metadata
   tags:
     - sre_agent
-  when: run_uuid is defined and scenario_number is defined and run_number is defined
 
 - name: Copy metadata content to file
   ansible.builtin.copy:

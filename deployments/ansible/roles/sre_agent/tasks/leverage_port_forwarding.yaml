@@ -16,7 +16,7 @@
   when: ingress_hostname is undefined or ingress_hostname | trim == ''
 
 - name: Kubectl port-forward on/for the prometheus-server service with dynamic port
-  ansible.builtin.shell: KUBECONFIG={{ kubeconfig }} kubectl -n "{{ prometheus_namespace_project_name }}" port-forward "svc/prometheus-server" "{{ dynamic_port_for_prometheus }}:80" --request-timeout=10m
+  ansible.builtin.shell: KUBECONFIG={{ kubeconfig }} kubectl -n prometheus port-forward "svc/prometheus-server" "{{ dynamic_port_for_prometheus }}:80" --request-timeout=10m
   async: 600
   poll: 0
   register: prometheus_port_forward_for_datasources_creation
@@ -31,13 +31,6 @@
 - name: Set the Prometheus URL
   set_fact:
     prometheus_url: "http://127.0.0.1:{{ dynamic_port_for_prometheus }}"
-  when: ingress_hostname is undefined or ingress_hostname | trim == ''
-
-- name: Kubectl port-forward on/for Topology collector with dynamic port
-  ansible.builtin.shell: KUBECONFIG={{ kubeconfig }} kubectl -n kube-system port-forward svc/topology-monitor "{{ dynamic_port_for_topology_monitor }}:8080" --request-timeout=30m
-  async: 600
-  poll: 0
-  register: topology_port_forward
   when: ingress_hostname is undefined or ingress_hostname | trim == ''
 
 - name: Check availability of ports
@@ -81,6 +74,13 @@
 - name: Assign a dynamic port if one is available
   set_fact:
     dynamic_port_for_topology_monitor: "{{ (lsof_check.results | selectattr('stdout', 'equalto', 'available') | map(attribute='item') | list | first) }}"
+  when: ingress_hostname is undefined or ingress_hostname | trim == ''
+
+- name: Kubectl port-forward on/for Topology collector with dynamic port
+  ansible.builtin.shell: KUBECONFIG={{ kubeconfig }} kubectl -n kube-system port-forward svc/topology-monitor "{{ dynamic_port_for_topology_monitor }}:8080" --request-timeout=30m
+  async: 600
+  poll: 0
+  register: topology_port_forward
   when: ingress_hostname is undefined or ingress_hostname | trim == ''
 
 - name: Wait for port-forward to be available

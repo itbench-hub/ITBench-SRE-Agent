@@ -1,10 +1,41 @@
 ---
+- name: Install pysqlite3-binary
+  ansible.builtin.shell: "source {{ venv_directory }}/bin/activate && pip install --no-input pysqlite3-binary"
+  register: shell_output_pysqlite3_install
+  retries: 3
+  delay: 10
+  until: shell_output_pysqlite3_install.rc == 0
+  tags:
+    - sre_agent
+
 - name: Install CrewAI and CrewAI tools
   ansible.builtin.shell: "source {{ venv_directory }}/bin/activate && pip install --no-input crewai && pip install --no-input crewai-tools"
   register: shell_output_crewai_install
   retries: 3
   delay: 10
   until: shell_output_crewai_install.rc == 0
+  tags:
+    - sre_agent
+
+- name: Get Python site-packages directory
+  ansible.builtin.shell: 'source {{ venv_directory }}/bin/activate && python3.12 -c "import site; print(site.getsitepackages()[0])"'
+  register: site_packages_dir
+  changed_when: false
+  tags:
+    - sre_agent
+
+- name: Create sitecustomize.py to override sqlite3 with pysqlite3
+  copy:
+    dest: "{{ site_packages_dir.stdout }}/sitecustomize.py"
+    content: |
+      import sys
+      try:
+          __import__('pysqlite3')
+          sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+      except ImportError:
+          pass
+    mode: '0644'
+  notify: restart_services  # Optional: if you need to restart any services
   tags:
     - sre_agent
 

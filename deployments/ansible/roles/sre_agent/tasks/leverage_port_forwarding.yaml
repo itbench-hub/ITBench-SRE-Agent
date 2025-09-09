@@ -1,4 +1,8 @@
 ---
+- name: (Hack) Kubeconfig path inside AWX-EE container
+  ansible.builtin.shell: "find /runner/env -type f -size +3072c -exec grep -l 'kind: Config' {} \\;"
+  register: kubeconfig_path_inside_ee
+
 - name: Check availability of ports
   ansible.builtin.shell: |
     lsof -i :{{ item }} > /dev/null && echo "in_use" || echo "available"
@@ -16,7 +20,7 @@
   when: ingress_hostname is undefined or ingress_hostname | trim == ''
 
 - name: Kubectl port-forward on/for the prometheus-server service with dynamic port
-  ansible.builtin.shell: KUBECONFIG={{ kubeconfig }} kubectl -n prometheus port-forward "svc/prometheus-server" "{{ dynamic_port_for_prometheus }}:80" --request-timeout=10m
+  ansible.builtin.shell: KUBECONFIG={{ kubeconfig_path_inside_ee.stdout }} kubectl -n prometheus port-forward "svc/prometheus-server" "{{ dynamic_port_for_prometheus }}:80" --request-timeout=10m
   async: 600
   poll: 0
   register: prometheus_port_forward_for_datasources_creation
@@ -77,7 +81,7 @@
   when: ingress_hostname is undefined or ingress_hostname | trim == ''
 
 - name: Kubectl port-forward on/for Topology collector with dynamic port
-  ansible.builtin.shell: KUBECONFIG={{ kubeconfig }} kubectl -n kube-system port-forward svc/topology-monitor "{{ dynamic_port_for_topology_monitor }}:8080" --request-timeout=30m
+  ansible.builtin.shell: KUBECONFIG={{ kubeconfig_path_inside_ee.stdout }} kubectl -n kube-system port-forward svc/topology-monitor "{{ dynamic_port_for_topology_monitor }}:8080" --request-timeout=30m
   async: 600
   poll: 0
   register: topology_port_forward

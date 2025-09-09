@@ -1,6 +1,10 @@
 ---
+- name: (Hack) Kubeconfig path inside AWX-EE container
+  ansible.builtin.shell: "find /runner/env -type f -size +3072c -exec grep -l 'kind: Config' {} \\;"
+  register: kubeconfig_path_inside_ee
+
 - name: Get the Ingress URL
-  ansible.builtin.shell: "KUBECONFIG={{ kubeconfig }} kubectl get ingress prometheus -n prometheus -o json"
+  ansible.builtin.shell: "KUBECONFIG={{ kubeconfig_path_inside_ee.stdout }} kubectl get ingress prometheus -n prometheus -o json"
   register: observability_stack_ingress
   retries: 5
   delay: 60

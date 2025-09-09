@@ -168,11 +168,11 @@
   tags:
     - sre_agent
 
-# - name: Pause for 45 minutes
-#   ansible.builtin.pause:
-#     minutes: 45
-#   tags:
-#     - sre_agent
+- name: Pause for 45 minutes
+  ansible.builtin.pause:
+    minutes: 45
+  tags:
+    - sre_agent
 
 - name: Run CrewAI and log to file
   ansible.builtin.shell: "source {{ venv_directory }}/bin/activate && cd {{ sre_agent_directory }} && crewai run >> {{ tempfile_for_crewai_run.path }}"

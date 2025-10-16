@@ -1,0 +1,56 @@
+{
+  "entities": [
+    {
+      "id": "f7b81bfa708eceaa",
+      "root_cause": true
+    },
+    {
+      "id": "659a13a97963a8ed",
+      "root_cause": true
+    },
+    {
+      "id": "f6141d58f7cf04fe",
+      "root_cause": true
+    },
+    {
+      "id": "b40c546092df7cfe",
+      "root_cause": true
+    },
+    {
+      "id": "23e93756db687b8f",
+      "root_cause": true
+    }
+  ],
+  "propagations": [
+    {
+      "source": "f7b81bfa708eceaa",
+      "target": "f7b81bfa708eceaa",
+      "condition": "Container in CrashLoopBackOff",
+      "effect": "High CPU throttling in ad"
+    },
+    {
+      "source": "659a13a97963a8ed",
+      "target": "659a13a97963a8ed",
+      "condition": "Container with back-off restarting",
+      "effect": "High CPU throttling in currency"
+    },
+    {
+      "source": "f6141d58f7cf04fe",
+      "target": "f6141d58f7cf04fe",
+      "condition": "Container with back-off restarting",
+      "effect": "High CPU throttling in fraud-detection"
+    },
+    {
+      "source": "b40c546092df7cfe",
+      "target": "b40c546092df7cfe",
+      "condition": "High load on recommendation and product-catalog",
+      "effect": "High CPU throttling in both containers"
+    },
+    {
+      "source": "23e93756db687b8f",
+      "target": "23e93756db687b8f",
+      "condition": "High load on recommendation and product-catalog",
+      "effect": "High CPU throttling in both containers"
+    }
+  ]
+}

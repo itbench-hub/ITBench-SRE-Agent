@@ -20,6 +20,10 @@ import os
 import sys
 import time
 import subprocess
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from lumyn.crew import LumynCrew
 from lumyn.tools.observability_stack.get_alerts import GetAlertsCustomTool

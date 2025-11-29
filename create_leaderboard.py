@@ -405,6 +405,9 @@ Examples:
         print("❌ Error: Judge API key required. Set --judge_api_key or OPENROUTER_API_KEY environment variable.")
         sys.exit(1)
     
+    # Define project root
+    project_root = Path(__file__).parent
+    
     # Debug: Show judge configuration
     masked_key = f"{judge_api_key[:8]}...{judge_api_key[-4:]}" if len(judge_api_key) > 12 else "***"
     print(f"\n🔧 Judge Configuration (using litellm):")
@@ -427,7 +430,6 @@ Examples:
         print(f"📂 Using scenarios from: {scenarios_path}")
     else:
         # Auto-detect from ITBench-Snapshots submodule
-        project_root = Path(__file__).parent
         itbench_path = project_root / "ITBench-Snapshots"
         
         if not itbench_path.exists():

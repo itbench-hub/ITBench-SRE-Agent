@@ -9,6 +9,9 @@ import argparse
 import asyncio
 import json
 import os
+import logging
+from datetime import datetime
+from pathlib import Path
 
 from .config import AgentConfig
 from .graph import create_graph, generate_diagnosis
@@ -105,6 +108,39 @@ async def main():
         config.file_tools.base_dir = args.base_dir
 
     print("Initializing SRE Support Agent...")
+
+    # Initialize Agent Analytics SDK if environment variable is set
+    # This is typically set by create_leaderboard.py
+    logs_dir_path = os.environ.get("AGENT_ANALYTICS_LOGS_DIR")
+    if logs_dir_path:
+        try:
+            from agent_analytics.instrumentation import agent_analytics_sdk
+            from opentelemetry import trace
+            
+            Path(logs_dir_path).mkdir(parents=True, exist_ok=True)
+            
+            # Use existing timestamp if file exists or create new one
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            # Append process ID to avoid conflicts in parallel runs
+            log_filename = f"agent_analytics_sdk_logs_{timestamp}_{os.getpid()}.log"
+            
+            exporter = agent_analytics_sdk.initialize_logging(
+                tracer_type=agent_analytics_sdk.SUPPORTED_TRACER_TYPES.LOG,
+                logs_dir_path=logs_dir_path,
+                log_filename=log_filename
+            )
+            
+            tracer = trace.get_tracer(__name__)
+            
+            # Configure logging for analytics
+            analytics_logger = logging.getLogger("agent_analytics")
+            analytics_logger.setLevel(logging.INFO)
+            print(f"📊 Agent Analytics SDK active: {logs_dir_path}{log_filename}")
+            
+        except ImportError:
+            print("⚠️  Agent Analytics SDK not found. Skipping instrumentation.")
+        except Exception as e:
+            print(f"⚠️  Failed to initialize Agent Analytics SDK: {e}")
 
     # Set environment variables for litellm
     if config.llm_config.api_key:

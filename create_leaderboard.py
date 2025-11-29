@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import sys
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -140,6 +141,9 @@ def run_agent(scenario_path: Path, config_path: Optional[str] = None, show_outpu
     if config_path:
         cmd.extend(["--config", config_path])
     
+    # Pass current environment to subprocess (includes AGENT_ANALYTICS_LOGS_DIR)
+    env = os.environ.copy()
+    
     try:
         if show_output:
             # Use Popen for streaming output
@@ -149,7 +153,8 @@ def run_agent(scenario_path: Path, config_path: Optional[str] = None, show_outpu
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
-                cwd=Path(__file__).parent
+                cwd=Path(__file__).parent,
+                env=env
             )
             
             scroller = ScrollingOutput(max_lines=15)
@@ -191,7 +196,8 @@ def run_agent(scenario_path: Path, config_path: Optional[str] = None, show_outpu
                 capture_output=True,
                 text=True,
                 timeout=600,
-                cwd=Path(__file__).parent
+                cwd=Path(__file__).parent,
+                env=env
             )
             return result.stdout + result.stderr
             
@@ -470,7 +476,12 @@ Examples:
     # Determine model name for output file
     model_name_clean = (args.model_name or "default").replace("/", "_").replace(":", "_")
     
-    # Results storage
+    # Ensure output directory exists
+    output_dir = project_root / "website" / "results"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = args.output or (output_dir / f"result_{model_name_clean}.json")
+    
+    # Initialize or load existing results
     results = {
         "model_name": args.model_name or "default",
         "judge_model": args.judge_model,
@@ -480,10 +491,70 @@ Examples:
         "summary": {}
     }
     
+    if Path(output_path).exists():
+        try:
+            with open(output_path, "r") as f:
+                existing_results = json.load(f)
+                print(f"🔄 Resuming from existing results file: {output_path}")
+                
+                # Debug loaded data
+                loaded_scenarios = existing_results.get("scenarios", {})
+                print(f"   Loaded {len(loaded_scenarios)} scenarios from file: {list(loaded_scenarios.keys())}")
+                
+                # Merge existing results
+                results["scenarios"] = loaded_scenarios
+                results["timestamp"] = existing_results.get("timestamp", results["timestamp"])
+        except Exception as e:
+            print(f"⚠️  Failed to load existing results: {e}")
+            
+    # Initialize Agent Analytics SDK
+    try:
+        from agent_analytics.instrumentation import agent_analytics_sdk
+        from opentelemetry import trace
+        
+        logs_dir_path = os.environ.get("AGENT_ANALYTICS_LOGS_DIR", f"website/results/{model_name_clean}/logs/")
+        Path(logs_dir_path).mkdir(parents=True, exist_ok=True)
+        
+        # Set env var for subprocesses to see
+        os.environ["AGENT_ANALYTICS_LOGS_DIR"] = logs_dir_path
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_filename = f"agent_analytics_sdk_logs_{timestamp}.log"
+        
+        exporter = agent_analytics_sdk.initialize_logging(
+            tracer_type=agent_analytics_sdk.SUPPORTED_TRACER_TYPES.LOG,
+            logs_dir_path=logs_dir_path,
+            log_filename=log_filename
+        )
+        
+        tracer = trace.get_tracer(__name__)
+        
+        # Configure logging for analytics
+        analytics_logger = logging.getLogger("agent_analytics")
+        analytics_logger.setLevel(logging.INFO)
+        print(f"\n📊 Agent Analytics SDK initialized. Logs: {logs_dir_path}{log_filename}")
+        
+    except ImportError:
+        print("\n⚠️  Agent Analytics SDK not found. Skipping instrumentation.")
+    except Exception as e:
+        print(f"\n⚠️  Failed to initialize Agent Analytics SDK: {e}")
+
     total_scores = []
     
     for scenario_path in all_scenarios:
         scenario_name = scenario_path.name
+        
+        # Debug resume logic
+        print(f"DEBUG: Checking for '{scenario_name}' in results. Keys: {list(results['scenarios'].keys())}")
+        
+        # Check if scenario is already fully completed
+        existing_scenario = results["scenarios"].get(scenario_name)
+        if existing_scenario and len(existing_scenario.get("runs", [])) >= args.runs:
+            print(f"\n⏭️  Skipping {scenario_name} (already completed {len(existing_scenario['runs'])}/{args.runs} runs)")
+            # Add existing scores to total for final summary
+            total_scores.extend(existing_scenario.get("scores", []))
+            continue
+            
         print(f"\n{'='*60}")
         print(f"📁 Scenario: {scenario_name}")
         print(f"{'='*60}")
@@ -493,15 +564,23 @@ Examples:
             print(f"  ⏭️  Skipping (no ground truth)")
             continue
         
-        scenario_results = {
-            "runs": [],
-            "scores": [],
-            "avg_score": 0,
-            "min_score": 0,
-            "max_score": 0
-        }
+        # Initialize or get existing scenario results
+        if existing_scenario:
+            scenario_results = existing_scenario
+            completed_runs = len(scenario_results.get("runs", []))
+            print(f"  🔄 Resuming {scenario_name} from run {completed_runs + 1}")
+        else:
+            scenario_results = {
+                "runs": [],
+                "scores": [],
+                "avg_score": 0,
+                "min_score": 0,
+                "max_score": 0
+            }
+            completed_runs = 0
         
-        for run_idx in range(args.runs):
+        # Run remaining iterations
+        for run_idx in range(completed_runs, args.runs):
             print(f"\n  ╔══════════════════════════════════════════════════════════")
             print(f"  ║ 🔄 Run {run_idx + 1}/{args.runs} - {scenario_name}")
             print(f"  ╚══════════════════════════════════════════════════════════")
@@ -584,6 +663,22 @@ Examples:
             
             scenario_results["runs"].append(run_result)
             scenario_results["scores"].append(run_result["score"])
+            
+            # Save progress after each run
+            results["scenarios"][scenario_name] = scenario_results
+            
+            # Recalculate stats for this scenario
+            current_scores = scenario_results["scores"]
+            scenario_results["avg_score"] = sum(current_scores) / len(current_scores) if current_scores else 0
+            scenario_results["min_score"] = min(current_scores) if current_scores else 0
+            scenario_results["max_score"] = max(current_scores) if current_scores else 0
+            
+            # Write intermediate results to disk
+            try:
+                with open(output_path, "w") as f:
+                    json.dump(results, f, indent=2)
+            except Exception as e:
+                print(f"⚠️  Warning: Failed to save intermediate results: {e}")
         
         # Calculate scenario statistics
         scores = scenario_results["scores"]

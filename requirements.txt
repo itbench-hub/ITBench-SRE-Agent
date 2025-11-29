@@ -4,3 +4,6 @@ litellm
 python-dotenv
 toml
 pydantic
+pyyaml
+openai
+asteval

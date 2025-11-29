@@ -148,18 +148,72 @@ python -m sre_support_agent --config custom.toml "Diagnose the incident"
 
 The repository includes [ITBench-Snapshots](https://github.com/itbench-hub/ITBench-Snapshots) as a submodule, which contains benchmark scenarios for validating SRE agent performance.
 
-### Running Validation
+### Running a Single Scenario
 
-To validate your agent against the benchmark scenarios:
+To validate your agent against a specific benchmark scenario:
 
 ```bash
 # Run the agent against a specific scenario
-python -m sre_support_agent --dir ./ITBench-Snapshots/snapshots/sre/v0.1-ca9707b2-8b70-468b-a8f9-9658438f80b1/ca9707b2-8b70-468b-a8f9-9658438f80b1/Scenario-<scenario-name> "Diagnose the incident"
+python -m sre_support_agent --dir ./ITBench-Snapshots/snapshots/sre/v0.1-ca9707b2-8b70-468b-a8f9-9658438f80b1/ca9707b2-8b70-468b-a8f9-9658438f80b1/Scenario-3 "Diagnose the incident"
 ```
 
-### Leaderboard
+### Running the Full Benchmark
 
-*Coming soon: Instructions for submitting results to the ITBench leaderboard.*
+Use `create_leaderboard.py` to evaluate the agent across all scenarios and generate leaderboard results:
+
+```bash
+# Basic usage (uses config from agent.toml)
+python create_leaderboard.py
+
+# Specify a different model for the agent
+python create_leaderboard.py --model_name openrouter/anthropic/claude-sonnet-4
+
+# Full configuration with custom API endpoints
+python create_leaderboard.py \
+    --model_name openrouter/anthropic/claude-sonnet-4 \
+    --base_url https://openrouter.ai/api/v1 \
+    --api_key your-agent-api-key \
+    --judge_model google/gemini-2.5-pro \
+    --judge_base_url https://openrouter.ai/api/v1 \
+    --judge_api_key your-judge-api-key
+
+# Run fewer iterations (default is 5 runs per scenario)
+python create_leaderboard.py --runs 3
+
+# Run specific scenarios only
+python create_leaderboard.py --scenarios Scenario-3 Scenario-16
+```
+
+#### CLI Options
+
+| Option | Description |
+|--------|-------------|
+| `--model_name` | Model name for the SRE agent (overrides config) |
+| `--base_url` | Base URL for the SRE agent API |
+| `--api_key` | API key for the SRE agent |
+| `--judge_model` | Model for LLM-as-judge evaluation (default: `google/gemini-2.5-pro`) |
+| `--judge_base_url` | Base URL for judge model API (default: OpenRouter) |
+| `--judge_api_key` | API key for judge model (or set `OPENROUTER_API_KEY` env var) |
+| `--runs` | Number of runs per scenario (default: 5) |
+| `--scenarios` | Specific scenarios to evaluate |
+| `--config` | Path to base config file |
+| `--output` | Custom output file path |
+
+### Viewing the Leaderboard
+
+Results are saved to `website/results/result_<model_name>.json`. To view the leaderboard:
+
+```bash
+# Serve the static website locally
+cd website
+python -m http.server 8000
+# Open http://localhost:8000 in your browser
+```
+
+The leaderboard displays:
+- **Rankings**: Models sorted by average score (descending)
+- **Per-scenario breakdown**: Click any model to see detailed per-scenario results
+- **Variability metrics**: Min/max/avg scores across multiple runs
 
 ## Development
 
@@ -181,10 +235,14 @@ uv run isort sre_support_agent/
 ```
 sre_support_agent/
 ├── agent.toml.example      # Configuration template (copy to agent.toml)
+├── create_leaderboard.py   # Benchmark evaluation script
 ├── pyproject.toml          # Project metadata and dependencies
 ├── requirements.txt        # Dependencies for pip install
 ├── README.md
 ├── ITBench-Snapshots/      # Benchmark scenarios (git submodule)
+├── website/                # Static leaderboard website
+│   ├── index.html          # Leaderboard UI
+│   └── results/            # Generated result JSON files
 └── sre_support_agent/      # Main package
     ├── __init__.py
     ├── __main__.py         # Entry point for `python -m sre_support_agent`

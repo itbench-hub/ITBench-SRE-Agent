@@ -26,6 +26,15 @@ wheels = [
 ]
 
 [[package]]
+name = "asteval"
+version = "1.0.7"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/41/cf/82ccb7bc570ebfc5ad8357a6ead94492b0da845ab6b6fb4468fbb21118ca/asteval-1.0.7.tar.gz", hash = "sha256:729fa010511957afcbdbadb0304da09cef6904c145b6901e917afac2dd5668a1", size = 51859, upload-time = "2025-11-06T21:42:37.045Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b7/da/875925db2ed80dc7b919b2817da555848b608620be9662c5f835670d5d8d/asteval-1.0.7-py3-none-any.whl", hash = "sha256:d78df08681dfff59031ca624ba7030f9dc576a7a16e2f7a5137c6e7ef3ee60c4", size = 22089, upload-time = "2025-11-06T21:42:35.245Z" },
+]
+
+[[package]]
 name = "black"
 version = "25.11.0"
 source = { registry = "https://pypi.org/simple" }
@@ -841,11 +850,14 @@ name = "sre-support-agent"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "asteval" },
     { name = "langchain-core" },
     { name = "langchain-openai" },
     { name = "langgraph" },
+    { name = "openai" },
     { name = "pydantic" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
     { name = "toml" },
 ]
 
@@ -858,13 +870,16 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "asteval", specifier = ">=1.0.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=24.0.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.13.0" },
     { name = "langchain-core", specifier = ">=0.1.0" },
     { name = "langchain-openai", specifier = ">=0.0.1" },
     { name = "langgraph", specifier = ">=0.0.1" },
+    { name = "openai", specifier = ">=1.0.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "toml", specifier = ">=0.10.2" },
 ]

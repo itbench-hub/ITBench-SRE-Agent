@@ -209,8 +209,20 @@ class LAAJEvaluator:
                     if not is_on_path:
                         prox["score"] = 0
         
-        # Extract primary score (root_cause_entity for compatibility)
-        root_cause_score = scores.get("root_cause_entity", {}).get("score", 0)
+        # Extract all 7 metric scores into a structured format
+        metrics = {
+            "root_cause_entity": scores.get("root_cause_entity", {}).get("score", 0),
+            "root_cause_reasoning": scores.get("root_cause_reasoning", {}).get("score", 0),
+            "propagation_chain": scores.get("propagation_chain", {}).get("score", 0),
+            "fault_localization": scores.get("fault_localization", {}).get("score", 0),
+            "root_cause_reasoning_partial": scores.get("root_cause_reasoning_partial", {}).get("score", 0),
+            "root_cause_proximity_no_fp": scores.get("root_cause_proximity_no_fp", {}).get("score", 0),
+            "root_cause_proximity_with_fp": scores.get("root_cause_proximity_with_fp", {}).get("score", 0),
+        }
+        evaluated_data["metrics"] = metrics
+        
+        # Primary score for backward compatibility (root_cause_entity)
+        root_cause_score = metrics["root_cause_entity"]
         evaluated_data["score"] = root_cause_score
         evaluated_data["justification"] = scores.get("root_cause_entity", {}).get("justification", "")
         

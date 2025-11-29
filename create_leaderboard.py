@@ -360,6 +360,46 @@ def create_temp_config(
 
 
 # ============================================================================
+# Metric Calculation Helpers
+# ============================================================================
+
+METRIC_NAMES = [
+    "root_cause_entity",
+    "root_cause_reasoning",
+    "propagation_chain",
+    "fault_localization",
+    "root_cause_reasoning_partial",
+    "root_cause_proximity_no_fp",
+    "root_cause_proximity_with_fp",
+]
+
+
+def calculate_metric_stats(runs: List[Dict]) -> Dict[str, Dict[str, float]]:
+    """
+    Calculate average, min, max for each metric across all runs.
+    
+    Args:
+        runs: List of run results, each containing a 'metrics' dict
+        
+    Returns:
+        Dict mapping metric name to stats (avg, min, max)
+    """
+    if not runs:
+        return {name: {"avg": 0, "min": 0, "max": 0} for name in METRIC_NAMES}
+    
+    metric_stats = {}
+    for metric_name in METRIC_NAMES:
+        values = [run.get("metrics", {}).get(metric_name, 0) for run in runs]
+        metric_stats[metric_name] = {
+            "avg": sum(values) / len(values) if values else 0,
+            "min": min(values) if values else 0,
+            "max": max(values) if values else 0,
+        }
+    
+    return metric_stats
+
+
+# ============================================================================
 # Concurrent Execution Support
 # ============================================================================
 
@@ -418,6 +458,15 @@ def run_single_iteration(
         return {
             "run": run_num,
             "score": 0,
+            "metrics": {
+                "root_cause_entity": 0,
+                "root_cause_reasoning": 0,
+                "propagation_chain": 0,
+                "fault_localization": 0,
+                "root_cause_reasoning_partial": 0,
+                "root_cause_proximity_no_fp": 0,
+                "root_cause_proximity_with_fp": 0,
+            },
             "justification": "Failed to parse agent output",
             "agent_output_raw": agent_output_raw[-2000:]
         }
@@ -441,6 +490,9 @@ def run_single_iteration(
     error = eval_result.get("error")
     judge_raw = eval_result.get("judge_raw_response")
     
+    # Extract all metrics from evaluation result
+    metrics = eval_result.get("metrics", {})
+    
     score_icon = "✅" if score == 100 else "❌"
     with _print_lock:
         print(f"    {score_icon} [{scenario_name}] Run {run_num}: Score {score}/100")
@@ -448,6 +500,7 @@ def run_single_iteration(
     return {
         "run": run_num,
         "score": score,
+        "metrics": metrics,
         "justification": justification,
         "error": error,
         "judge_raw_response": judge_raw,
@@ -806,6 +859,7 @@ Examples:
             scenario_results["avg_score"] = sum(current_scores) / len(current_scores) if current_scores else 0
             scenario_results["min_score"] = min(current_scores) if current_scores else 0
             scenario_results["max_score"] = max(current_scores) if current_scores else 0
+            scenario_results["metric_stats"] = calculate_metric_stats(scenario_results["runs"])
             
             try:
                 with open(output_path, "w") as f:
@@ -844,6 +898,15 @@ Examples:
                     run_result = {
                         "run": run_idx + 1,
                         "score": 0,
+                        "metrics": {
+                            "root_cause_entity": 0,
+                            "root_cause_reasoning": 0,
+                            "propagation_chain": 0,
+                            "fault_localization": 0,
+                            "root_cause_reasoning_partial": 0,
+                            "root_cause_proximity_no_fp": 0,
+                            "root_cause_proximity_with_fp": 0,
+                        },
                         "justification": "Failed to parse agent output",
                         "agent_output_raw": agent_output_raw[-2000:]  # Last 2000 chars for debugging
                     }
@@ -886,9 +949,13 @@ Examples:
                         print(f"    │    {error}")
                     print(f"    └────────────────────────────────────────────────────────────")
                     
+                    # Extract all metrics from evaluation result
+                    metrics = eval_result.get("metrics", {})
+                    
                     run_result = {
                         "run": run_idx + 1,
                         "score": score,
+                        "metrics": metrics,
                         "justification": justification,
                         "error": error,
                         "judge_raw_response": judge_raw,
@@ -906,6 +973,7 @@ Examples:
                 scenario_results["avg_score"] = sum(current_scores) / len(current_scores) if current_scores else 0
                 scenario_results["min_score"] = min(current_scores) if current_scores else 0
                 scenario_results["max_score"] = max(current_scores) if current_scores else 0
+                scenario_results["metric_stats"] = calculate_metric_stats(scenario_results["runs"])
                 
                 # Write intermediate results to disk
                 try:
@@ -920,11 +988,23 @@ Examples:
         scenario_results["min_score"] = min(scores) if scores else 0
         scenario_results["max_score"] = max(scores) if scores else 0
         
+        # Calculate per-metric statistics
+        scenario_results["metric_stats"] = calculate_metric_stats(scenario_results["runs"])
+        
         results["scenarios"][scenario_name] = scenario_results
         total_scores.extend(scores)
         
         print(f"\n  📈 Scenario Summary: avg={scenario_results['avg_score']:.1f}, "
               f"min={scenario_results['min_score']}, max={scenario_results['max_score']}")
+    
+    # Calculate overall metric averages across all scenarios
+    overall_metric_avgs = {}
+    for metric_name in METRIC_NAMES:
+        scenario_avgs = [
+            s.get("metric_stats", {}).get(metric_name, {}).get("avg", 0)
+            for s in results["scenarios"].values()
+        ]
+        overall_metric_avgs[metric_name] = sum(scenario_avgs) / len(scenario_avgs) if scenario_avgs else 0
     
     # Calculate overall summary
     results["summary"] = {
@@ -934,7 +1014,8 @@ Examples:
         "overall_min_score": min(total_scores) if total_scores else 0,
         "overall_max_score": max(total_scores) if total_scores else 0,
         "scenarios_with_perfect_score": sum(1 for s in results["scenarios"].values() if s["max_score"] == 100),
-        "scenarios_with_any_success": sum(1 for s in results["scenarios"].values() if s["max_score"] > 0)
+        "scenarios_with_any_success": sum(1 for s in results["scenarios"].values() if s["max_score"] > 0),
+        "metric_averages": overall_metric_avgs
     }
     
     # Clean up temp config

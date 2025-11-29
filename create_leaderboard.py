@@ -385,6 +385,8 @@ Examples:
                         help="Number of runs per scenario to capture variability (default: 5)")
     parser.add_argument("--scenarios", nargs="+",
                         help="Specific scenarios to run (e.g., Scenario-3 Scenario-16)")
+    parser.add_argument("--scenarios-dir",
+                        help="Path to directory containing Scenario-* folders (auto-detected if not provided)")
     parser.add_argument("--output", help="Output file path (default: website/results/result_<model>.json)")
     parser.add_argument("--quiet", "-q", action="store_true",
                         help="Suppress live agent output (only show summary)")
@@ -406,14 +408,29 @@ Examples:
     print()
     
     # Find scenarios
-    project_root = Path(__file__).parent
-    itbench_path = project_root / "ITBench-Snapshots"
-    
-    if not itbench_path.exists():
-        print("❌ Error: ITBench-Snapshots submodule not found. Run: git submodule update --init --recursive")
-        sys.exit(1)
-    
-    all_scenarios = get_all_scenarios(itbench_path)
+    if args.scenarios_dir:
+        # Use provided directory - find all Scenario-* subdirs
+        scenarios_path = Path(args.scenarios_dir)
+        if not scenarios_path.exists():
+            print(f"❌ Error: Scenarios directory not found: {scenarios_path}")
+            sys.exit(1)
+        all_scenarios = sorted([
+            d for d in scenarios_path.iterdir() 
+            if d.is_dir() and d.name.startswith("Scenario-")
+        ])
+        print(f"📂 Using scenarios from: {scenarios_path}")
+    else:
+        # Auto-detect from ITBench-Snapshots submodule
+        project_root = Path(__file__).parent
+        itbench_path = project_root / "ITBench-Snapshots"
+        
+        if not itbench_path.exists():
+            print("❌ Error: ITBench-Snapshots submodule not found.")
+            print("   Either run: git submodule update --init --recursive")
+            print("   Or specify: --scenarios-dir /path/to/scenarios")
+            sys.exit(1)
+        
+        all_scenarios = get_all_scenarios(itbench_path)
     
     if args.scenarios:
         # Filter to specific scenarios

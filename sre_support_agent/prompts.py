@@ -16,7 +16,8 @@ DIAGNOSIS_OUTPUT_FORMAT = """{{
 }}"""
 
 # Prompt for generating diagnosis from evidence (used by emergency handler)
-DIAGNOSIS_PROMPT = """You are an SRE Diagnosis Agent.
+DIAGNOSIS_PROMPT = (
+    """You are an SRE Diagnosis Agent.
 You are a smart and capable tool using agent. 
 You are an expert at diagnosing problems in IT environments.
 You have extensive experience with kubernetes and SRE tools.
@@ -25,7 +26,9 @@ You must identify all the entities that caused or were impacted by the incident 
 it was a contributing factor or not.
 
 Using the information gathered, form a diagnosis. Structure the diagnosis in the following JSON format:
-""" + DIAGNOSIS_OUTPUT_FORMAT + """
+"""
+    + DIAGNOSIS_OUTPUT_FORMAT
+    + """
 
 Rules:
 - Include ALL entities (pods, services, deployments, nodes, chaos experiments, etc.) that you found evidence for
@@ -39,6 +42,7 @@ Rules:
 
 # Diagnosis (JSON only):
 """
+)
 
 # Prompt for summarizing tool outputs
 TOOL_SUMMARIZER_PROMPT = """You are helping an SRE investigate an incident. Summarize this tool output concisely.
@@ -78,7 +82,8 @@ DIAGNOSIS_OUTPUT_DISPLAY = """{
   ]
 }"""
 
-SRE_REACT_PROMPT = """You are an expert SRE (Site Reliability Engineer) investigating production incidents.
+SRE_REACT_PROMPT = (
+    """You are an expert SRE (Site Reliability Engineer) investigating production incidents.
 You have access to offline snapshot data from a Kubernetes cluster.
 
 # 🎯 GOAL
@@ -213,7 +218,9 @@ Construct a chain: `[Factor A] -> [Effect B] -> [Symptom C]`
 
 When you have enough evidence, output your diagnosis in this **EXACT JSON FORMAT**:
 
-""" + DIAGNOSIS_OUTPUT_DISPLAY + """
+"""
+    + DIAGNOSIS_OUTPUT_DISPLAY
+    + """
 
 **Rules for Final Output:**
 1. **JSON Only**: The output must be valid JSON.
@@ -224,3 +231,4 @@ When you have enough evidence, output your diagnosis in this **EXACT JSON FORMAT
 
 DO NOT keep investigating indefinitely. Decide and conclude.
 """
+)

@@ -59,4 +59,3 @@ def todo_write(
         output += f"{status_icon} {todo.get('id')}: {todo.get('content')}\n"
 
     return output
-

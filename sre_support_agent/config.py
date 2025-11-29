@@ -11,14 +11,14 @@ class BlacklistConfig(BaseModel):
 
     patterns: List[str] = Field(
         default_factory=list,
-        description="List of glob patterns to exclude from file operations (e.g., 'ground_truth*.yaml', '*.secret')"
+        description="List of glob patterns to exclude from file operations (e.g., 'ground_truth*.yaml', '*.secret')",
     )
 
     def is_blacklisted(self, file_path: str) -> bool:
         """Check if a file path matches any blacklist pattern."""
         # Get just the filename for pattern matching
         filename = os.path.basename(file_path)
-        
+
         for pattern in self.patterns:
             # Match against filename
             if fnmatch.fnmatch(filename, pattern):
@@ -100,7 +100,7 @@ class AgentConfig(BaseModel):
     file_tools: FileToolsConfig = Field(default_factory=FileToolsConfig)
     search_tools: SearchToolsConfig = Field(default_factory=SearchToolsConfig)
     system_tools: SystemToolsConfig = Field(default_factory=SystemToolsConfig)
-    
+
     # Blacklist configuration
     blacklist: BlacklistConfig = Field(default_factory=BlacklistConfig)
 

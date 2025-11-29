@@ -14,9 +14,11 @@ import re
 import subprocess
 import sys
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -358,6 +360,183 @@ def create_temp_config(
 
 
 # ============================================================================
+# Concurrent Execution Support
+# ============================================================================
+
+# Thread-safe lock for printing
+_print_lock = threading.Lock()
+
+
+def run_single_iteration(
+    run_idx: int,
+    scenario_path: Path,
+    scenario_name: str,
+    ground_truth: Dict,
+    config_path: Optional[str],
+    judge_model: str,
+    judge_base_url: str,
+    judge_api_key: str,
+    quiet: bool = True,
+) -> Dict:
+    """
+    Run a single agent iteration and evaluate it.
+    
+    This function is designed to be called from a thread pool for concurrent execution.
+    
+    Args:
+        run_idx: The run index (0-based)
+        scenario_path: Path to the scenario directory
+        scenario_name: Name of the scenario
+        ground_truth: Ground truth data
+        config_path: Path to config file
+        judge_model: Model for evaluation
+        judge_base_url: Base URL for judge API
+        judge_api_key: API key for judge
+        quiet: Whether to suppress output
+        
+    Returns:
+        Dictionary with run results
+    """
+    run_num = run_idx + 1
+    
+    with _print_lock:
+        print(f"    🔄 [{scenario_name}] Starting run {run_num}...")
+    
+    # Run the agent (always quiet in concurrent mode to avoid output interleaving)
+    agent_output_raw = run_agent(
+        scenario_path,
+        config_path=config_path,
+        show_output=False  # Always quiet in concurrent mode
+    )
+    
+    # Parse agent output
+    agent_output = parse_agent_output(agent_output_raw)
+    
+    if not agent_output:
+        with _print_lock:
+            print(f"    ❌ [{scenario_name}] Run {run_num}: Failed to parse agent output")
+        return {
+            "run": run_num,
+            "score": 0,
+            "justification": "Failed to parse agent output",
+            "agent_output_raw": agent_output_raw[-2000:]
+        }
+    
+    # Show parsed entities
+    entities = agent_output.get("entities", [])
+    with _print_lock:
+        print(f"    📋 [{scenario_name}] Run {run_num}: Parsed {len(entities)} entities, evaluating...")
+    
+    # Evaluate with judge
+    eval_result = evaluate_with_judge(
+        ground_truth,
+        agent_output,
+        judge_model,
+        judge_base_url,
+        judge_api_key
+    )
+    
+    score = eval_result.get("score", 0)
+    justification = eval_result.get("justification", "No justification provided")
+    error = eval_result.get("error")
+    judge_raw = eval_result.get("judge_raw_response")
+    
+    score_icon = "✅" if score == 100 else "❌"
+    with _print_lock:
+        print(f"    {score_icon} [{scenario_name}] Run {run_num}: Score {score}/100")
+    
+    return {
+        "run": run_num,
+        "score": score,
+        "justification": justification,
+        "error": error,
+        "judge_raw_response": judge_raw,
+        "agent_entities": agent_output.get("entities", [])
+    }
+
+
+def run_scenario_concurrent(
+    scenario_path: Path,
+    scenario_name: str,
+    ground_truth: Dict,
+    num_runs: int,
+    completed_runs: int,
+    config_path: Optional[str],
+    judge_model: str,
+    judge_base_url: str,
+    judge_api_key: str,
+    max_workers: Optional[int] = None,
+) -> List[Dict]:
+    """
+    Run multiple iterations of a scenario concurrently.
+    
+    Args:
+        scenario_path: Path to the scenario directory
+        scenario_name: Name of the scenario
+        ground_truth: Ground truth data
+        num_runs: Total number of runs to perform
+        completed_runs: Number of runs already completed (for resume)
+        config_path: Path to config file
+        judge_model: Model for evaluation
+        judge_base_url: Base URL for judge API
+        judge_api_key: API key for judge
+        max_workers: Maximum number of concurrent workers
+        
+    Returns:
+        List of run results
+    """
+    remaining_runs = num_runs - completed_runs
+    if remaining_runs <= 0:
+        return []
+    
+    # Default to running all remaining in parallel
+    workers = max_workers or remaining_runs
+    workers = min(workers, remaining_runs)
+    
+    print(f"\n  ⚡ Running {remaining_runs} iterations concurrently (max {workers} workers)...")
+    
+    results = []
+    
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        # Submit all remaining runs
+        futures = {
+            executor.submit(
+                run_single_iteration,
+                run_idx,
+                scenario_path,
+                scenario_name,
+                ground_truth,
+                config_path,
+                judge_model,
+                judge_base_url,
+                judge_api_key,
+                True,  # quiet
+            ): run_idx
+            for run_idx in range(completed_runs, num_runs)
+        }
+        
+        # Collect results as they complete
+        for future in as_completed(futures):
+            run_idx = futures[future]
+            try:
+                result = future.result()
+                results.append(result)
+            except Exception as e:
+                print(f"    ❌ [{scenario_name}] Run {run_idx + 1} failed with exception: {e}")
+                results.append({
+                    "run": run_idx + 1,
+                    "score": 0,
+                    "justification": f"Exception during execution: {e}",
+                    "error": str(e)
+                })
+    
+    # Sort results by run number for consistent ordering
+    results.sort(key=lambda x: x["run"])
+    
+    return results
+
+
+# ============================================================================
 # Main Execution
 # ============================================================================
 
@@ -370,6 +549,8 @@ Examples:
   python create_leaderboard.py
   python create_leaderboard.py --model_name openrouter/anthropic/claude-sonnet-4
   python create_leaderboard.py --runs 3 --judge_model google/gemini-2.5-pro
+  python create_leaderboard.py --runs 5 --concurrent              # Run 5 reps concurrently
+  python create_leaderboard.py --runs 10 --concurrent --max-workers 3  # Max 3 at a time
         """
     )
     
@@ -396,6 +577,10 @@ Examples:
     parser.add_argument("--output", help="Output file path (default: website/results/result_<model>.json)")
     parser.add_argument("--quiet", "-q", action="store_true",
                         help="Suppress live agent output (only show summary)")
+    parser.add_argument("--concurrent", "-c", action="store_true",
+                        help="Run repetitions of each scenario concurrently")
+    parser.add_argument("--max-workers", type=int, default=None,
+                        help="Max concurrent workers when using --concurrent (default: number of runs)")
     
     args = parser.parse_args()
     
@@ -451,6 +636,9 @@ Examples:
     
     print(f"🔍 Found {len(all_scenarios)} scenarios to evaluate")
     print(f"🔄 Running {args.runs} iterations per scenario")
+    if args.concurrent:
+        workers = args.max_workers or args.runs
+        print(f"⚡ Concurrent mode: up to {workers} workers per scenario")
     print()
     
     # Debug: Show agent configuration
@@ -581,106 +769,150 @@ Examples:
             }
             completed_runs = 0
         
-        # Run remaining iterations
-        for run_idx in range(completed_runs, args.runs):
-            print(f"\n  ╔══════════════════════════════════════════════════════════")
-            print(f"  ║ 🔄 Run {run_idx + 1}/{args.runs} - {scenario_name}")
-            print(f"  ╚══════════════════════════════════════════════════════════")
-            
-            # Run the agent with live output
-            if not args.quiet:
-                print(f"    ▶️  Starting agent (live output below)...")
-            else:
-                print(f"    ▶️  Running agent (quiet mode)...", end="", flush=True)
-            
-            agent_output_raw = run_agent(
-                scenario_path,
+        # Run remaining iterations - either concurrent or sequential
+        if args.concurrent:
+            # Concurrent execution
+            run_results = run_scenario_concurrent(
+                scenario_path=scenario_path,
+                scenario_name=scenario_name,
+                ground_truth=ground_truth,
+                num_runs=args.runs,
+                completed_runs=completed_runs,
                 config_path=temp_config_path or args.config,
-                show_output=not args.quiet
+                judge_model=args.judge_model,
+                judge_base_url=args.judge_base_url,
+                judge_api_key=judge_api_key,
+                max_workers=args.max_workers,
             )
             
-            if args.quiet:
-                print(" done.")
+            # Add all results
+            for run_result in run_results:
+                scenario_results["runs"].append(run_result)
+                scenario_results["scores"].append(run_result["score"])
             
-            # Parse agent output
-            agent_output = parse_agent_output(agent_output_raw)
+            # Show summary of concurrent runs
+            if run_results:
+                concurrent_scores = [r["score"] for r in run_results]
+                print(f"\n  ┌────────────────────────────────────────────────────────────")
+                print(f"  │ ⚡ Concurrent Batch Complete: {len(run_results)} runs")
+                print(f"  │    Scores: {concurrent_scores}")
+                print(f"  │    Avg: {sum(concurrent_scores)/len(concurrent_scores):.1f}, "
+                      f"Min: {min(concurrent_scores)}, Max: {max(concurrent_scores)}")
+                print(f"  └────────────────────────────────────────────────────────────")
             
-            if not agent_output:
-                print(f"\n    ❌ Failed to parse agent output")
-                print(f"    💡 Last 500 chars of output:")
-                print(f"       {agent_output_raw[-500:]}")
-                run_result = {
-                    "run": run_idx + 1,
-                    "score": 0,
-                    "justification": "Failed to parse agent output",
-                    "agent_output_raw": agent_output_raw[-2000:]  # Last 2000 chars for debugging
-                }
-            else:
-                # Show parsed entities
-                entities = agent_output.get("entities", [])
-                print(f"\n    📋 Parsed {len(entities)} entities from agent output")
-                for ent in entities[:5]:  # Show first 5
-                    cf = "✓" if ent.get("contributing_factor") else "○"
-                    print(f"       {cf} {ent.get('id', 'unknown')[:50]}")
-                if len(entities) > 5:
-                    print(f"       ... and {len(entities) - 5} more")
-                
-                print(f"\n    ⚖️  Sending to judge ({args.judge_model})...")
-                eval_result = evaluate_with_judge(
-                    ground_truth,
-                    agent_output,
-                    args.judge_model,
-                    args.judge_base_url,
-                    judge_api_key
-                )
-                
-                score = eval_result.get("score", 0)
-                justification = eval_result.get("justification", "No justification provided")
-                error = eval_result.get("error")
-                judge_raw = eval_result.get("judge_raw_response")
-                
-                # Display score with emphasis - NO TRUNCATION
-                score_icon = "✅" if score == 100 else "❌"
-                print(f"\n    ┌────────────────────────────────────────────────────────────")
-                print(f"    │ {score_icon} SCORE: {score}/100")
-                print(f"    │")
-                print(f"    │ 📝 Justification:")
-                # Print full justification, wrapped
-                for line in justification.split('\n'):
-                    print(f"    │    {line}")
-                if error:
-                    print(f"    │")
-                    print(f"    │ ⚠️  Error:")
-                    print(f"    │    {error}")
-                print(f"    └────────────────────────────────────────────────────────────")
-                
-                run_result = {
-                    "run": run_idx + 1,
-                    "score": score,
-                    "justification": justification,
-                    "error": error,
-                    "judge_raw_response": judge_raw,
-                    "agent_entities": agent_output.get("entities", [])
-                }
-            
-            scenario_results["runs"].append(run_result)
-            scenario_results["scores"].append(run_result["score"])
-            
-            # Save progress after each run
+            # Save results after batch completes
             results["scenarios"][scenario_name] = scenario_results
-            
-            # Recalculate stats for this scenario
             current_scores = scenario_results["scores"]
             scenario_results["avg_score"] = sum(current_scores) / len(current_scores) if current_scores else 0
             scenario_results["min_score"] = min(current_scores) if current_scores else 0
             scenario_results["max_score"] = max(current_scores) if current_scores else 0
             
-            # Write intermediate results to disk
             try:
                 with open(output_path, "w") as f:
                     json.dump(results, f, indent=2)
             except Exception as e:
-                print(f"⚠️  Warning: Failed to save intermediate results: {e}")
+                print(f"⚠️  Warning: Failed to save results: {e}")
+        else:
+            # Sequential execution (original behavior)
+            for run_idx in range(completed_runs, args.runs):
+                print(f"\n  ╔══════════════════════════════════════════════════════════")
+                print(f"  ║ 🔄 Run {run_idx + 1}/{args.runs} - {scenario_name}")
+                print(f"  ╚══════════════════════════════════════════════════════════")
+                
+                # Run the agent with live output
+                if not args.quiet:
+                    print(f"    ▶️  Starting agent (live output below)...")
+                else:
+                    print(f"    ▶️  Running agent (quiet mode)...", end="", flush=True)
+                
+                agent_output_raw = run_agent(
+                    scenario_path,
+                    config_path=temp_config_path or args.config,
+                    show_output=not args.quiet
+                )
+                
+                if args.quiet:
+                    print(" done.")
+                
+                # Parse agent output
+                agent_output = parse_agent_output(agent_output_raw)
+                
+                if not agent_output:
+                    print(f"\n    ❌ Failed to parse agent output")
+                    print(f"    💡 Last 500 chars of output:")
+                    print(f"       {agent_output_raw[-500:]}")
+                    run_result = {
+                        "run": run_idx + 1,
+                        "score": 0,
+                        "justification": "Failed to parse agent output",
+                        "agent_output_raw": agent_output_raw[-2000:]  # Last 2000 chars for debugging
+                    }
+                else:
+                    # Show parsed entities
+                    entities = agent_output.get("entities", [])
+                    print(f"\n    📋 Parsed {len(entities)} entities from agent output")
+                    for ent in entities[:5]:  # Show first 5
+                        cf = "✓" if ent.get("contributing_factor") else "○"
+                        print(f"       {cf} {ent.get('id', 'unknown')[:50]}")
+                    if len(entities) > 5:
+                        print(f"       ... and {len(entities) - 5} more")
+                    
+                    print(f"\n    ⚖️  Sending to judge ({args.judge_model})...")
+                    eval_result = evaluate_with_judge(
+                        ground_truth,
+                        agent_output,
+                        args.judge_model,
+                        args.judge_base_url,
+                        judge_api_key
+                    )
+                    
+                    score = eval_result.get("score", 0)
+                    justification = eval_result.get("justification", "No justification provided")
+                    error = eval_result.get("error")
+                    judge_raw = eval_result.get("judge_raw_response")
+                    
+                    # Display score with emphasis - NO TRUNCATION
+                    score_icon = "✅" if score == 100 else "❌"
+                    print(f"\n    ┌────────────────────────────────────────────────────────────")
+                    print(f"    │ {score_icon} SCORE: {score}/100")
+                    print(f"    │")
+                    print(f"    │ 📝 Justification:")
+                    # Print full justification, wrapped
+                    for line in justification.split('\n'):
+                        print(f"    │    {line}")
+                    if error:
+                        print(f"    │")
+                        print(f"    │ ⚠️  Error:")
+                        print(f"    │    {error}")
+                    print(f"    └────────────────────────────────────────────────────────────")
+                    
+                    run_result = {
+                        "run": run_idx + 1,
+                        "score": score,
+                        "justification": justification,
+                        "error": error,
+                        "judge_raw_response": judge_raw,
+                        "agent_entities": agent_output.get("entities", [])
+                    }
+                
+                scenario_results["runs"].append(run_result)
+                scenario_results["scores"].append(run_result["score"])
+                
+                # Save progress after each run
+                results["scenarios"][scenario_name] = scenario_results
+                
+                # Recalculate stats for this scenario
+                current_scores = scenario_results["scores"]
+                scenario_results["avg_score"] = sum(current_scores) / len(current_scores) if current_scores else 0
+                scenario_results["min_score"] = min(current_scores) if current_scores else 0
+                scenario_results["max_score"] = max(current_scores) if current_scores else 0
+                
+                # Write intermediate results to disk
+                try:
+                    with open(output_path, "w") as f:
+                        json.dump(results, f, indent=2)
+                except Exception as e:
+                    print(f"⚠️  Warning: Failed to save intermediate results: {e}")
         
         # Calculate scenario statistics
         scores = scenario_results["scores"]

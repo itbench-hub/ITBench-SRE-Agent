@@ -9,7 +9,6 @@ import json
 import os
 from typing import Callable, Optional
 
-
 # Global blacklist checker - set by langchain_tools.py when tools are initialized
 _blacklist_checker: Optional[Callable[[str], bool]] = None
 
@@ -216,11 +215,11 @@ def list_directory(
         result = []
         for item in items:
             item_path = os.path.join(path, item)
-            
+
             # Skip blacklisted items
             if _is_blacklisted(item_path):
                 continue
-                
+
             type_str = "DIR" if os.path.isdir(item_path) else "FILE"
             result.append(f"{type_str}: {item}")
 

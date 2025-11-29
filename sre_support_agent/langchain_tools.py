@@ -169,10 +169,10 @@ def todo_write(todos: str) -> str:
             - content: The plan step OR hypothesis OR alert tracking info (string)
             - status: "pending" | "in_progress" | "completed"
 
-    CRITICAL: 
+    CRITICAL:
     1. You MUST include the Hypothesis Table and Alerts Table in your updates.
     2. You MUST include a specific PLAN step for every INVESTIGATING hypothesis.
-    
+
     Example content formats:
     - Plan: "PLAN: Validate H1 by grepping for connection errors in checkout logs"
     - Hypothesis: "| H1: Network Issue | Ev: None | Status: INVESTIGATING |"

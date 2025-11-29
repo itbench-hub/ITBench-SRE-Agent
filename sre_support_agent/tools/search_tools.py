@@ -10,7 +10,6 @@ import os
 import subprocess
 from typing import Callable, List, Optional
 
-
 # Global blacklist checker - set by langchain_tools.py when tools are initialized
 _blacklist_checker: Optional[Callable[[str], bool]] = None
 
@@ -32,7 +31,7 @@ def _filter_grep_output(output: str) -> str:
     """Filter grep output to remove lines from blacklisted files."""
     if _blacklist_checker is None:
         return output
-    
+
     filtered_lines = []
     for line in output.splitlines():
         # Grep output format is typically: filename:line_number:content
@@ -44,7 +43,7 @@ def _filter_grep_output(output: str) -> str:
         else:
             # Line doesn't contain a file path, include it
             filtered_lines.append(line)
-    
+
     return "\n".join(filtered_lines)
 
 
@@ -98,10 +97,10 @@ def grep(
         if result.returncode == 0:
             # Filter out blacklisted files from output
             filtered_output = _filter_grep_output(result.stdout)
-            
+
             if not filtered_output.strip():
                 return "No matches found."
-            
+
             lines = filtered_output.splitlines()
             if len(lines) > 500:
                 return "\n".join(lines[:500]) + f"\n... ({len(lines)-500} more matches truncated)"
@@ -134,11 +133,11 @@ def file_search(
         for root, dirnames, filenames in os.walk(path):
             for filename in fnmatch.filter(filenames, pattern):
                 file_path = os.path.join(root, filename)
-                
+
                 # Skip blacklisted files
                 if _is_blacklisted(file_path):
                     continue
-                    
+
                 matches.append(file_path)
 
         if not matches:

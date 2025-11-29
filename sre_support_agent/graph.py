@@ -12,7 +12,7 @@ Key design decisions:
 
 Summarization rules:
 - list_directory: NEVER summarized (agent needs full listing)
-- Alert files: NEVER summarized (agent must read completely)  
+- Alert files: NEVER summarized (agent must read completely)
 - Todo updates: NEVER summarized
 - [NO_SUMMARIZE] prefix: NEVER summarized (explicit opt-out)
 - Other large files: Summarized with investigation context
@@ -32,6 +32,7 @@ from .prompts import DIAGNOSIS_PROMPT, SRE_REACT_PROMPT, TOOL_SUMMARIZER_PROMPT
 
 class AgentState(TypedDict):
     """State for the SRE investigation agent. Messages are in OpenAI/litellm format."""
+
     messages: Annotated[Sequence[dict], operator.add]
 
 
@@ -42,11 +43,11 @@ def extract_evidence_summary(messages: Sequence[dict]) -> str:
     for msg in messages:
         role = msg.get("role", "")
         content = msg.get("content", "") or ""
-        
+
         if role == "tool":
             # Strip NO_SUMMARIZE prefix if present
             if content.startswith(NO_SUMMARIZE_PREFIX):
-                content = content[len(NO_SUMMARIZE_PREFIX):].lstrip()
+                content = content[len(NO_SUMMARIZE_PREFIX) :].lstrip()
 
             if len(content) < 20:
                 continue
@@ -79,15 +80,17 @@ def _convert_tools_to_litellm(tools: list) -> list[dict]:
             schema.pop("title", None)
         else:
             schema = {"type": "object", "properties": {}}
-        
-        result.append({
-            "type": "function",
-            "function": {
-                "name": tool.name,
-                "description": tool.description or "",
-                "parameters": schema,
-            },
-        })
+
+        result.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "parameters": schema,
+                },
+            }
+        )
     return result
 
 
@@ -126,19 +129,19 @@ def create_graph(config: AgentConfig = None):
     def is_alert_file(content: str) -> bool:
         """Check if content looks like alert data that shouldn't be summarized."""
         alert_indicators = [
-            "alerts_in_alerting", "alerts_at_", '"alertname"',
-            '"state":"firing"', '"state":"alerting"', "RequestErrorRate", "HighLatency",
+            "alerts_in_alerting",
+            "alerts_at_",
+            '"alertname"',
+            '"state":"firing"',
+            '"state":"alerting"',
+            "RequestErrorRate",
+            "HighLatency",
         ]
         return any(indicator in content for indicator in alert_indicators)
 
     def is_directory_listing(content: str) -> bool:
         """Check if content is a directory listing."""
-        return (
-            content.startswith("FILE:") or 
-            content.startswith("DIR:") or 
-            "\nFILE:" in content or 
-            "\nDIR:" in content
-        )
+        return content.startswith("FILE:") or content.startswith("DIR:") or "\nFILE:" in content or "\nDIR:" in content
 
     def should_skip_summarization(tool_name: str, content: str) -> bool:
         """Check if summarization should be skipped for this content."""
@@ -173,19 +176,21 @@ def create_graph(config: AgentConfig = None):
     def agent_node(state: AgentState) -> dict:
         """Call the LLM and return the assistant message."""
         messages = list(state["messages"])
-        
+
         # Check for retry condition (last message was malformed output from agent)
         if len(messages) > 1 and messages[-1].get("role") == "assistant":
             # Check if it was a non-tool-call, non-diagnosis response
             last_msg = messages[-1]
             if not last_msg.get("tool_calls") and not is_valid_diagnosis(last_msg.get("content", "")):
-                messages.append({
-                    "role": "system",
-                    "content": "⚠️ YOUR LAST RESPONSE WAS MALFORMED.\n"
-                               "You outputted raw text instead of a valid tool call or diagnosis JSON.\n"
-                               "Please RETRY by calling a tool OR outputting the final diagnosis JSON."
-                })
-        
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": "⚠️ YOUR LAST RESPONSE WAS MALFORMED.\n"
+                        "You outputted raw text instead of a valid tool call or diagnosis JSON.\n"
+                        "Please RETRY by calling a tool OR outputting the final diagnosis JSON.",
+                    }
+                )
+
         # Ensure system prompt is first
         if not messages or messages[0].get("role") != "system":
             messages = [{"role": "system", "content": SRE_REACT_PROMPT}] + messages
@@ -200,13 +205,13 @@ def create_graph(config: AgentConfig = None):
         )
 
         assistant_message = response.choices[0].message
-        
+
         # Build the response dict
         result = {
             "role": "assistant",
             "content": assistant_message.content or "",
         }
-        
+
         # Add tool calls if present
         if hasattr(assistant_message, "tool_calls") and assistant_message.tool_calls:
             result["tool_calls"] = [
@@ -220,7 +225,7 @@ def create_graph(config: AgentConfig = None):
                 }
                 for tc in assistant_message.tool_calls
             ]
-        
+
         # Preserve thinking_blocks if present (for Gemini 3 compatibility)
         if hasattr(assistant_message, "thinking_blocks") and assistant_message.thinking_blocks:
             result["thinking_blocks"] = [
@@ -238,30 +243,30 @@ def create_graph(config: AgentConfig = None):
         """Check if the response looks like a valid diagnosis."""
         if not content or len(content.strip()) < 20:
             return False
-        
+
         has_entities = '"entities"' in content or "'entities'" in content
         looks_like_file = content.strip().startswith("---") or "Function:" in content[:50]
         looks_like_tool_output = content.strip().startswith("FILE:") or content.strip().startswith("DIR:")
-        
+
         if looks_like_file or looks_like_tool_output:
             return False
-        
+
         return has_entities
 
     def should_continue(state: AgentState) -> Literal["tools", "agent", "end"]:
         """Determine the next step based on the last message."""
         messages = state["messages"]
         last_message = messages[-1]
-        
+
         # If it has tool calls, continue to tools
         if last_message.get("tool_calls"):
             return "tools"
-        
+
         # If it's a valid diagnosis, end
         content = last_message.get("content", "")
         if is_valid_diagnosis(content):
             return "end"
-            
+
         # Otherwise retry (malformed response)
         return "agent"
 
@@ -280,7 +285,7 @@ def create_graph(config: AgentConfig = None):
         for tool_call in tool_calls:
             tool_name = tool_call["function"]["name"]
             tool_id = tool_call["id"]
-            
+
             # Parse arguments
             try:
                 tool_args = json.loads(tool_call["function"]["arguments"])
@@ -299,19 +304,21 @@ def create_graph(config: AgentConfig = None):
 
             # Process the result (summarization, etc.)
             original_content = str(result)
-            
+
             if original_content.startswith(NO_SUMMARIZE_PREFIX):
-                clean_content = original_content[len(NO_SUMMARIZE_PREFIX):].lstrip()
+                clean_content = original_content[len(NO_SUMMARIZE_PREFIX) :].lstrip()
             else:
                 summary = summarize_content(tool_name, original_content, context)
                 clean_content = summary if summary else original_content
 
             # Create tool response message
-            tool_messages.append({
-                "role": "tool",
-                "tool_call_id": tool_id,
-                "content": clean_content,
-            })
+            tool_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_id,
+                    "content": clean_content,
+                }
+            )
 
         return {"messages": tool_messages}
 
@@ -321,17 +328,17 @@ def create_graph(config: AgentConfig = None):
     workflow.add_node("tools", tools_node)
 
     workflow.add_edge(START, "agent")
-    
+
     workflow.add_conditional_edges(
-        "agent", 
-        should_continue, 
+        "agent",
+        should_continue,
         {
-            "tools": "tools", 
+            "tools": "tools",
             "end": END,
             "agent": "agent",
-        }
+        },
     )
-    
+
     workflow.add_edge("tools", "agent")
 
     return workflow.compile()

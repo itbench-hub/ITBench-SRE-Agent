@@ -8,8 +8,8 @@ streaming results to the console as the agent works.
 import argparse
 import asyncio
 import json
-import os
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -35,12 +35,14 @@ Examples:
         help="The investigation query (default: diagnose incident)",
     )
     parser.add_argument(
-        "--dir", "-d",
+        "--dir",
+        "-d",
         dest="base_dir",
         help="Directory containing snapshot data (overrides config)",
     )
     parser.add_argument(
-        "--config", "-c",
+        "--config",
+        "-c",
         dest="config_path",
         help="Path to config file (default: agent.toml)",
     )
@@ -51,16 +53,16 @@ def is_valid_diagnosis(content: str) -> bool:
     """Check if the response looks like a valid diagnosis (contains entities JSON)."""
     if not content or len(content.strip()) < 20:
         return False
-    
+
     has_entities = '"entities"' in content or "'entities'" in content
     has_json_structure = "{" in content and "}" in content
-    
+
     looks_like_file = content.strip().startswith("---") or "Function:" in content[:50]
     looks_like_tool_output = content.strip().startswith("FILE:") or content.strip().startswith("DIR:")
-    
+
     if looks_like_file or looks_like_tool_output:
         return False
-    
+
     return has_entities or (has_json_structure and len(content) > 100)
 
 
@@ -68,16 +70,13 @@ def format_tool_call(tool_call: dict) -> str:
     """Format a tool call for display."""
     func = tool_call.get("function", {})
     tool_name = func.get("name", "unknown")
-    
+
     try:
         args = json.loads(func.get("arguments", "{}"))
     except json.JSONDecodeError:
         args = {}
-    
-    arg_str = " ".join([
-        f'{k}="{v}"' if isinstance(v, str) else f'{k}={v}' 
-        for k, v in args.items()
-    ])
+
+    arg_str = " ".join([f'{k}="{v}"' if isinstance(v, str) else f"{k}={v}" for k, v in args.items()])
     return f"{tool_name}({arg_str})"
 
 
@@ -116,27 +115,27 @@ async def main():
         try:
             from agent_analytics.instrumentation import agent_analytics_sdk
             from opentelemetry import trace
-            
+
             Path(logs_dir_path).mkdir(parents=True, exist_ok=True)
-            
+
             # Use existing timestamp if file exists or create new one
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             # Append process ID to avoid conflicts in parallel runs
             log_filename = f"agent_analytics_sdk_logs_{timestamp}_{os.getpid()}.log"
-            
+
             exporter = agent_analytics_sdk.initialize_logging(
                 tracer_type=agent_analytics_sdk.SUPPORTED_TRACER_TYPES.LOG,
                 logs_dir_path=logs_dir_path,
-                log_filename=log_filename
+                log_filename=log_filename,
             )
-            
+
             tracer = trace.get_tracer(__name__)
-            
+
             # Configure logging for analytics
             analytics_logger = logging.getLogger("agent_analytics")
             analytics_logger.setLevel(logging.INFO)
             print(f"📊 Agent Analytics SDK active: {logs_dir_path}{log_filename}")
-            
+
         except ImportError:
             print("⚠️  Agent Analytics SDK not found. Skipping instrumentation.")
         except Exception as e:
@@ -186,12 +185,12 @@ async def main():
                         if last_msg.get("role") == "assistant":
                             tool_calls = last_msg.get("tool_calls", [])
                             content = last_msg.get("content", "")
-                            
+
                             if tool_calls:
                                 # Has tool calls - print them
                                 for tc in tool_calls:
                                     print(f"\n🔧 Calling: {format_tool_call(tc)}")
-                                
+
                                 if content:
                                     print(f"💭 {content}")
                             else:

@@ -39,4 +39,3 @@ def run_terminal_cmd(
         return "Error: Command timed out after 60 seconds."
     except Exception as e:
         return f"Error executing command: {str(e)}"
-

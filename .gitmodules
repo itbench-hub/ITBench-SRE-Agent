@@ -1,0 +1,3 @@
+[submodule "ITBench-Snapshots"]
+	path = ITBench-Snapshots
+	url = git@github.com:itbench-hub/ITBench-Snapshots.git

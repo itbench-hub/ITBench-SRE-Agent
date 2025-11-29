@@ -20,10 +20,15 @@ A diagnostic SRE (Site Reliability Engineering) agent built with [LangGraph](htt
 
 ## Installation
 
-1.  **Clone the repository** (if you haven't already):
+1.  **Clone the repository with submodules** (if you haven't already):
     ```bash
-    git clone <repository-url>
-    cd agents/sre
+    git clone --recurse-submodules <repository-url>
+    cd sre_support_agent
+    ```
+
+    If you've already cloned the repository without submodules, initialize them:
+    ```bash
+    git submodule update --init --recursive
     ```
 
 2.  **Create a virtual environment and install dependencies**:
@@ -139,6 +144,23 @@ python -m sre_support_agent --config custom.toml "Diagnose the incident"
 *   "Investigate the alerts and find the contributing factors"
 *   "Analyze the kubernetes events and traces to find the issue"
 
+## Validation & Leaderboard
+
+The repository includes [ITBench-Snapshots](https://github.com/itbench-hub/ITBench-Snapshots) as a submodule, which contains benchmark scenarios for validating SRE agent performance.
+
+### Running Validation
+
+To validate your agent against the benchmark scenarios:
+
+```bash
+# Run the agent against a specific scenario
+python -m sre_support_agent --dir ./ITBench-Snapshots/snapshots/sre/v0.1-ca9707b2-8b70-468b-a8f9-9658438f80b1/ca9707b2-8b70-468b-a8f9-9658438f80b1/Scenario-<scenario-name> "Diagnose the incident"
+```
+
+### Leaderboard
+
+*Coming soon: Instructions for submitting results to the ITBench leaderboard.*
+
 ## Development
 
 This project uses `black` and `isort` for code formatting.
@@ -157,11 +179,12 @@ uv run isort sre_support_agent/
 ## Project Structure
 
 ```
-agents/sre/
+sre_support_agent/
 ├── agent.toml.example      # Configuration template (copy to agent.toml)
 ├── pyproject.toml          # Project metadata and dependencies
 ├── requirements.txt        # Dependencies for pip install
 ├── README.md
+├── ITBench-Snapshots/      # Benchmark scenarios (git submodule)
 └── sre_support_agent/      # Main package
     ├── __init__.py
     ├── __main__.py         # Entry point for `python -m sre_support_agent`

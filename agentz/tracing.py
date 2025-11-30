@@ -26,13 +26,96 @@ import sys
 from datetime import datetime
 
 class OTLPLogCollector(http.server.BaseHTTPRequestHandler):
-    """Simple OTLP HTTP log receiver that writes to JSONL."""
+    """OTLP HTTP log receiver that decodes protobuf and writes structured JSONL."""
     output_file = None
     verbose = False
     
     def log_message(self, format, *args):
         if self.verbose:
             sys.stderr.write(f"[OTEL] {format % args}\\n")
+    
+    def _decode_protobuf(self, body):
+        """Decode OTLP protobuf logs into structured JSON."""
+        try:
+            from opentelemetry.proto.logs.v1.logs_pb2 import LogsData
+            
+            logs_data = LogsData()
+            logs_data.ParseFromString(body)
+            
+            # Convert protobuf to dict
+            result = {
+                "resource_logs": []
+            }
+            
+            for resource_log in logs_data.resource_logs:
+                resource_dict = {
+                    "resource": {},
+                    "scope_logs": []
+                }
+                
+                # Extract resource attributes
+                if resource_log.resource:
+                    resource_dict["resource"]["attributes"] = {}
+                    for attr in resource_log.resource.attributes:
+                        resource_dict["resource"]["attributes"][attr.key] = self._extract_value(attr.value)
+                
+                # Extract scope logs
+                for scope_log in resource_log.scope_logs:
+                    scope_dict = {
+                        "scope": {},
+                        "log_records": []
+                    }
+                    
+                    if scope_log.scope:
+                        scope_dict["scope"]["name"] = scope_log.scope.name
+                        scope_dict["scope"]["version"] = scope_log.scope.version
+                    
+                    # Extract log records
+                    for log_record in scope_log.log_records:
+                        record = {
+                            "time_unix_nano": str(log_record.time_unix_nano),
+                            "severity_number": log_record.severity_number,
+                            "severity_text": log_record.severity_text,
+                            "body": self._extract_value(log_record.body),
+                            "attributes": {},
+                            "trace_id": log_record.trace_id.hex() if log_record.trace_id else None,
+                            "span_id": log_record.span_id.hex() if log_record.span_id else None,
+                        }
+                        
+                        # Extract attributes (this is where reasoning data will be!)
+                        for attr in log_record.attributes:
+                            record["attributes"][attr.key] = self._extract_value(attr.value)
+                        
+                        scope_dict["log_records"].append(record)
+                    
+                    resource_dict["scope_logs"].append(scope_dict)
+                
+                result["resource_logs"].append(resource_dict)
+            
+            return result
+            
+        except ImportError:
+            return {"error": "opentelemetry-proto not installed", "format": "protobuf"}
+        except Exception as e:
+            return {"error": f"Failed to decode protobuf: {str(e)}", "format": "protobuf"}
+    
+    def _extract_value(self, any_value):
+        """Extract value from OTLP AnyValue."""
+        if any_value.HasField("string_value"):
+            return any_value.string_value
+        elif any_value.HasField("bool_value"):
+            return any_value.bool_value
+        elif any_value.HasField("int_value"):
+            return any_value.int_value
+        elif any_value.HasField("double_value"):
+            return any_value.double_value
+        elif any_value.HasField("array_value"):
+            return [self._extract_value(v) for v in any_value.array_value.values]
+        elif any_value.HasField("kvlist_value"):
+            return {kv.key: self._extract_value(kv.value) for kv in any_value.kvlist_value.values}
+        elif any_value.HasField("bytes_value"):
+            return any_value.bytes_value.hex()
+        return None
     
     def do_POST(self):
         content_length = int(self.headers.get('Content-Length', 0))
@@ -47,51 +130,23 @@ class OTLPLogCollector(http.server.BaseHTTPRequestHandler):
             "content_length": len(body),
         }
         
-        # Try to decode body based on content type
+        # Decode body based on content type
         if 'json' in content_type.lower():
             try:
-                record["body"] = json.loads(body.decode('utf-8'))
+                record["data"] = json.loads(body.decode('utf-8'))
             except Exception as e:
                 record["body_raw"] = body.decode('utf-8', errors='replace')
                 record["decode_error"] = str(e)
         elif 'protobuf' in content_type.lower() or 'binary' in content_type.lower() or 'octet' in content_type.lower():
-            # Binary/protobuf data - try to extract readable parts
-            record["format"] = "protobuf"
-            # Store hex for debugging (truncated for large payloads)
-            if len(body) > 2000:
-                record["body_hex_truncated"] = body[:2000].hex()
-                record["body_hex_full_length"] = len(body)
-            else:
-                record["body_hex"] = body.hex()
-            # Try to extract any readable strings from the protobuf
-            try:
-                readable = []
-                current = []
-                for b in body:
-                    if 32 <= b < 127:  # printable ASCII
-                        current.append(chr(b))
-                    else:
-                        if len(current) >= 4:  # only keep strings of 4+ chars
-                            s = ''.join(current)
-                            # Clean protobuf artifacts: strip trailing length prefixes
-                            # These appear as trailing digits, special chars like Y, ?, etc.
-                            import re
-                            s = re.sub(r'[0-9]+[-\\x00-\\x1f]*$', '', s)
-                            s = re.sub(r'[YQ?]+$', '', s)  # Common protobuf delimiters
-                            if len(s) >= 4:
-                                readable.append(s)
-                        current = []
-                if len(current) >= 4:
-                    s = ''.join(current)
-                    import re
-                    s = re.sub(r'[0-9]+[-\\x00-\\x1f]*$', '', s)
-                    s = re.sub(r'[YQ?]+$', '', s)
-                    if len(s) >= 4:
-                        readable.append(s)
-                if readable:
-                    record["extracted_strings"] = readable
-            except:
-                pass
+            # Decode protobuf
+            record["data"] = self._decode_protobuf(body)
+            
+            # Keep hex for debugging if decode failed
+            if "error" in record["data"]:
+                if len(body) > 2000:
+                    record["body_hex_truncated"] = body[:2000].hex()
+                else:
+                    record["body_hex"] = body.hex()
         else:
             # Unknown format
             record["body_raw"] = body.decode('utf-8', errors='replace')[:1000]
@@ -106,7 +161,15 @@ class OTLPLogCollector(http.server.BaseHTTPRequestHandler):
         
         # Log to stderr
         if self.verbose:
-            sys.stderr.write(f"[OTEL] Received: {self.path} - {len(body)} bytes ({content_type})\\n")
+            msg = f"[OTEL] Received: {self.path} - {len(body)} bytes ({content_type})"
+            if "data" in record and "resource_logs" in record["data"]:
+                log_count = sum(
+                    len(scope["log_records"]) 
+                    for rl in record["data"]["resource_logs"] 
+                    for scope in rl["scope_logs"]
+                )
+                msg += f" - {log_count} log records"
+            sys.stderr.write(msg + "\\n")
         
         # Send success response (OTLP expects empty JSON or protobuf response)
         self.send_response(200)
@@ -140,6 +203,7 @@ if __name__ == '__main__':
     sys.stderr.write(f"[OTEL] Log collector starting on port {args.port}\\n")
     sys.stderr.write(f"[OTEL] Output file: {args.output}\\n")
     sys.stderr.write(f"[OTEL] Endpoints: /v1/logs, /v1/traces\\n")
+    sys.stderr.write(f"[OTEL] Protobuf decoding: enabled\\n")
     
     server = http.server.HTTPServer(('0.0.0.0', args.port), OTLPLogCollector)
     try:

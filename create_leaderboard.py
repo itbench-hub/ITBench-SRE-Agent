@@ -6,6 +6,7 @@ This script runs the agentz agent on all ITBench scenarios, evaluates the result
 using an LLM-as-judge, and generates a leaderboard result file.
 
 Uses OTEL traces to track execution duration and inference counts.
+Each run is tagged with git branch/commit for tracking improvements.
 """
 
 import argparse
@@ -25,6 +26,59 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 from evaluation import LAAJEvaluator
+
+
+# ============================================================================
+# Git Version Tracking
+# ============================================================================
+
+def get_git_info() -> Dict[str, str]:
+    """Get current git branch and commit info for version tracking."""
+    info = {
+        "branch": "unknown",
+        "commit": "unknown",
+        "commit_short": "unknown",
+        "dirty": False,
+    }
+    
+    try:
+        # Get branch name
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            info["branch"] = result.stdout.strip()
+        
+        # Get full commit hash
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            info["commit"] = result.stdout.strip()
+            info["commit_short"] = info["commit"][:7]
+        
+        # Check if working directory is dirty
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            info["dirty"] = bool(result.stdout.strip())
+            
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    
+    return info
+
+
+def get_version_tag(git_info: Dict[str, str]) -> str:
+    """Generate a version tag from git info for result file naming."""
+    branch = git_info["branch"].replace("/", "-").replace("\\", "-")
+    commit = git_info["commit_short"]
+    dirty = "-dirty" if git_info["dirty"] else ""
+    return f"{branch}_{commit}{dirty}"
 
 
 # ============================================================================
@@ -62,20 +116,23 @@ def parse_traces(traces_file: Path) -> Dict[str, Any]:
     """
     Parse OTEL traces from JSONL file and extract metrics.
     
+    Supports both:
+    - New format: decoded OTLP with data.resource_logs[].scope_logs[].log_records[]
+    - Old format: extracted_strings (fallback)
+    
     Returns:
         Dict with:
         - inference_count: Number of API requests
         - total_duration_ms: Total duration from traces
-        - token_usage: Token counts if available
+        - input_tokens, output_tokens, reasoning_tokens: Token counts
     """
     metrics = {
         "inference_count": 0,
         "total_duration_ms": 0,
         "input_tokens": 0,
         "output_tokens": 0,
+        "reasoning_tokens": 0,
     }
-    # Track events internally but don't include in output
-    _events = []
     
     if not traces_file.exists():
         return metrics
@@ -89,48 +146,52 @@ def parse_traces(traces_file: Path) -> Dict[str, Any]:
                 try:
                     record = json.loads(line)
                     
-                    # Extract event info from extracted_strings
-                    extracted = record.get("extracted_strings", [])
+                    # New format: decoded OTLP logs
+                    if "data" in record and "resource_logs" in record.get("data", {}):
+                        for rl in record["data"]["resource_logs"]:
+                            for sl in rl.get("scope_logs", []):
+                                for lr in sl.get("log_records", []):
+                                    attrs = lr.get("attributes", {})
+                                    event_name = attrs.get("event.name", "")
+                                    
+                                    # Count API requests (inferences)
+                                    if "api_request" in event_name:
+                                        metrics["inference_count"] += 1
+                                        
+                                        # Extract duration
+                                        duration = attrs.get("duration_ms")
+                                        if duration:
+                                            try:
+                                                metrics["total_duration_ms"] += int(duration)
+                                            except (ValueError, TypeError):
+                                                pass
+                                    
+                                    # Token counts are in codex.sse_event (only with wire_api="responses")
+                                    # See: https://github.com/openai/codex/blob/main/docs/config.md
+                                    if "sse_event" in event_name:
+                                        for key in ["input_token_count", "output_token_count", 
+                                                    "reasoning_token_count", "cached_token_count"]:
+                                            val = attrs.get(key)
+                                            if val:
+                                                try:
+                                                    val_int = int(val)
+                                                    if "input" in key:
+                                                        metrics["input_tokens"] += val_int
+                                                    elif "output" in key:
+                                                        metrics["output_tokens"] += val_int
+                                                    elif "reasoning" in key:
+                                                        metrics["reasoning_tokens"] += val_int
+                                                except (ValueError, TypeError):
+                                                    pass
                     
-                    # Count API requests (inferences)
-                    for i, s in enumerate(extracted):
-                        if s == "event.name" and i + 1 < len(extracted):
-                            event_name = _clean_event_name(extracted[i + 1])
-                            _events.append(event_name)  # Track internally
-                            
-                            if "api_request" in event_name:
-                                metrics["inference_count"] += 1
-                        
-                        # Extract duration - look for patterns like "duration_ms" followed by a number
-                        if s == "duration_ms" and i + 1 < len(extracted):
-                            try:
-                                # Try to extract numeric value from next string
-                                duration_str = extracted[i + 1]
-                                # Extract leading digits
-                                match = re.match(r'^(\d+)', duration_str)
-                                if match:
-                                    duration = int(match.group(1))
-                                    metrics["total_duration_ms"] += duration
-                            except (ValueError, TypeError):
-                                pass
-                        
-                        # Extract token counts - try multiple patterns
-                        # Codex OTEL uses: input_token_count, output_token_count, cached_token_count
-                        s_lower = s.lower()
-                        if any(x in s_lower for x in ["input_token_count", "input_token", "prompt_token"]) and i + 1 < len(extracted):
-                            try:
-                                match = re.match(r'^(\d+)', extracted[i + 1])
-                                if match:
-                                    metrics["input_tokens"] += int(match.group(1))
-                            except (ValueError, TypeError):
-                                pass
-                        if any(x in s_lower for x in ["output_token_count", "output_token", "completion_token"]) and i + 1 < len(extracted):
-                            try:
-                                match = re.match(r'^(\d+)', extracted[i + 1])
-                                if match:
-                                    metrics["output_tokens"] += int(match.group(1))
-                            except (ValueError, TypeError):
-                                pass
+                    # Old format fallback: extracted_strings
+                    elif "extracted_strings" in record:
+                        extracted = record.get("extracted_strings", [])
+                        for i, s in enumerate(extracted):
+                            if s == "event.name" and i + 1 < len(extracted):
+                                event_name = _clean_event_name(extracted[i + 1])
+                                if "api_request" in event_name:
+                                    metrics["inference_count"] += 1
                                 
                 except json.JSONDecodeError:
                     continue
@@ -159,16 +220,30 @@ def load_ground_truth(scenario_path: Path) -> Optional[Dict]:
         return None
 
 
-def load_agent_output(output_file: Path) -> Optional[Dict]:
-    """Load agent output JSON file."""
+def load_agent_output(output_file: Path) -> Optional[Any]:
+    """Load agent output - returns Dict if valid JSON, raw string otherwise.
+    
+    Since we use LLM-as-a-judge, it can understand raw text even if JSON is malformed.
+    """
     if not output_file.exists():
         return None
     
     try:
         with open(output_file, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, Exception) as e:
-        print(f"  ⚠️  Failed to parse agent output: {e}")
+            content = f.read().strip()
+        
+        if not content:
+            return None
+        
+        # Try parsing as JSON first
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            # Return raw content - LLM judge can still evaluate it
+            print(f"  ⚠️  Agent output is not valid JSON, passing raw text to judge")
+            return content
+    except Exception as e:
+        print(f"  ⚠️  Failed to read agent output: {e}")
         return None
 
 
@@ -508,9 +583,16 @@ def run_single_iteration(
             "justification": "No agent output produced",
         }
     
-    entities = agent_output.get("entities", [])
+    # Handle both dict and raw string outputs
+    if isinstance(agent_output, dict):
+        entities = agent_output.get("entities", [])
+        entity_count = len(entities)
+    else:
+        # Raw text - count "contributing_factor" occurrences as rough entity count
+        entity_count = agent_output.lower().count("contributing_factor")
+    
     with _print_lock:
-        print(f"    📋 [{scenario_name}] Run {run_num}: {len(entities)} entities, evaluating...")
+        print(f"    📋 [{scenario_name}] Run {run_num}: ~{entity_count} entities, evaluating...")
     
     # Evaluate with judge
     eval_result = evaluate_with_judge(
@@ -752,11 +834,23 @@ Environment Variables:
         print(f"⚡ Concurrent mode: up to {workers} workers")
     print()
     
-    # Model name for output file
+    # Get git version info for tracking improvements
+    git_info = get_git_info()
+    version_tag = get_version_tag(git_info)
+    
+    print(f"📌 Git: {git_info['branch']} @ {git_info['commit_short']}" + 
+          (" (dirty)" if git_info['dirty'] else ""))
+    
+    # Model name for output file (includes version tag for tracking)
     model_name_clean = f"{args.model_provider}_{args.model}".replace("/", "_").replace(":", "_")
     
-    # Result file path
-    output_path = Path(args.output) if args.output else (results_dir / f"result_{model_name_clean}.json")
+    # Result file path - includes version tag so each branch/commit is tracked separately
+    if args.output:
+        output_path = Path(args.output)
+    else:
+        output_path = results_dir / f"result_{model_name_clean}_{version_tag}.json"
+    
+    print(f"📄 Output: {output_path.name}")
     
     # Traces go in a traces subdirectory
     traces_dir = results_dir / "traces"
@@ -769,6 +863,8 @@ Environment Variables:
         "judge_model": args.judge_model,
         "runs_per_scenario": args.runs,
         "timestamp": datetime.now().isoformat(),
+        "git": git_info,
+        "version_tag": version_tag,
         "scenarios": {},
         "summary": {}
     }

@@ -18,30 +18,8 @@ except ImportError:
     import tomli as tomllib
 
 
-# Default prompt for SRE incident investigation
-DEFAULT_SRE_PROMPT = """You are an SRE support agent and your task is to find out the root cause of the incidents. The data has been captured from a live kubernetes environment and available. Since it is a support case we do not have access to the live environment just the snapshots.
-
-You must explain the cause of all alerts. DONT WRITE ANY CODE OR REMOVE ANY CODE/DATA.
-
-You must identify all the entities that caused or were impacted by the incident and determine if it was a contributing factor or not.
-
-Using the information gathered, form a diagnosis. Structure the diagnosis in the following JSON format:
-
-```json
-{
-  "entities": [
-    {
-      "id": "entity id / kubernetes object uid that caused or was impacted in the incident",
-      "contributing_factor": true or false,
-      "reasoning": "reasoning about the contributing factor",
-      "evidence": "evidence for the contributing factor"
-    }
-  ]
-}
-```
-
-**NOTE** NEVER READ ground_truth.yaml file.
-"""
+# Path to bundled prompt file
+BUNDLED_PROMPT_PATH = Path(__file__).parent / "agentz-config" / "prompts" / "sre_support_engineer.md"
 
 # Default execution policy
 DEFAULT_POLICY = """# SRE Support Engineer Execution Policy
@@ -336,17 +314,18 @@ class AgentZConfig:
         return str(temp_path)
 
     def _get_prompt_content(self) -> str:
-        """Get prompt content from file or return default.
+        """Get prompt content from file.
         
+        Uses bundled prompt file, or custom file if --prompt-file specified.
         Supports variable substitution for {output_path}.
         """
-        content = DEFAULT_SRE_PROMPT
-        if self.prompt_file:
-            prompt_path = Path(self.prompt_file)
-            if prompt_path.exists():
-                content = prompt_path.read_text()
-            else:
-                raise FileNotFoundError(f"Prompt file not found: {self.prompt_file}")
+        # Use custom prompt file if specified, otherwise bundled
+        prompt_path = Path(self.prompt_file) if self.prompt_file else BUNDLED_PROMPT_PATH
+        
+        if not prompt_path.exists():
+            raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
+        
+        content = prompt_path.read_text()
         
         # Template substitution
         output_path = self.get_output_path()

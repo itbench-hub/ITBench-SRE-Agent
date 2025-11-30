@@ -152,16 +152,45 @@ class CodexRunner:
 
         # Run the command
         print(f"🚀 Running Codex on {scenario_name}...")
+        
+        # Setup stdout/stderr capture alongside traces
+        stdout_log_path = None
+        if traces_output_path:
+            stdout_log_path = traces_output_path.replace('.jsonl', '_stdout.log')
+        
         try:
-            result = subprocess.run(
-                cmd,
-                env=env,
-                cwd=str(scenario_path.resolve()),
-                # Stream output to console
-                stdout=sys.stdout,
-                stderr=sys.stderr,
-            )
-            return result.returncode
+            if stdout_log_path:
+                # Capture stdout/stderr to file while also showing on console
+                with open(stdout_log_path, 'w') as log_file:
+                    process = subprocess.Popen(
+                        cmd,
+                        env=env,
+                        cwd=str(scenario_path.resolve()),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,  # Line buffered
+                    )
+                    
+                    # Stream to both console and file
+                    for line in process.stdout:
+                        sys.stdout.write(line)
+                        sys.stdout.flush()
+                        log_file.write(line)
+                        log_file.flush()
+                    
+                    process.wait()
+                    return process.returncode
+            else:
+                # No logging, just stream to console
+                result = subprocess.run(
+                    cmd,
+                    env=env,
+                    cwd=str(scenario_path.resolve()),
+                    stdout=sys.stdout,
+                    stderr=sys.stderr,
+                )
+                return result.returncode
         except KeyboardInterrupt:
             print("\n⚠️  Interrupted by user")
             return 130
@@ -172,6 +201,8 @@ class CodexRunner:
             # Stop trace collector
             if collector:
                 collector.stop()
+            if stdout_log_path and self.config.verbose:
+                print(f"📝 Stdout/stderr saved to: {stdout_log_path}")
 
     def find_scenarios(self, base_dir: str) -> Generator[Path, None, None]:
         """Find all scenario directories in the base directory.

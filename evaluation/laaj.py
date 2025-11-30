@@ -60,14 +60,14 @@ class LAAJEvaluator:
     def evaluate(
         self,
         ground_truth: Dict[str, Any],
-        agent_output: Dict[str, Any],
+        agent_output: Any,
     ) -> Dict[str, Any]:
         """
         Evaluate agent output against ground truth using ITBench 7-metric evaluation.
         
         Args:
             ground_truth: Ground truth data with groups and propagations
-            agent_output: Agent output with entities
+            agent_output: Agent output - can be Dict or raw string (LLM judge handles both)
             
         Returns:
             Evaluation result with all 7 metric scores and justifications
@@ -77,9 +77,15 @@ class LAAJEvaluator:
             "propagations": ground_truth.get("propagations", [])
         }
         
+        # Accept either Dict or raw string - LLM judge can understand both
+        if isinstance(agent_output, dict):
+            agent_output_str = json.dumps(agent_output, indent=2)
+        else:
+            agent_output_str = str(agent_output)
+        
         eval_prompt = EVALUATE_PROMPT_TEMPLATE.format(
             ground_truth=json.dumps(gt_for_eval, indent=2),
-            generated_response=json.dumps(agent_output, indent=2)
+            generated_response=agent_output_str
         )
         
         raw_response = None

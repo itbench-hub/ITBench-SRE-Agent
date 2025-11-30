@@ -1,0 +1,82 @@
+# SRE Support Engineer Execution Policy
+# Auto-allows kubectl commands for Kubernetes incident investigation
+
+# Auto-allow all kubectl read operations
+prefix_rule(
+    pattern = ["kubectl", ["get", "describe", "logs", "top", "explain", "config", "api-resources", "api-versions"]],
+    decision = "allow",
+)
+
+# Auto-allow kubectl with specific flags commonly used in investigation
+prefix_rule(
+    pattern = ["kubectl", "get"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["kubectl", "describe"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["kubectl", "logs"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["kubectl", "events"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["kubectl", "top"],
+    decision = "allow",
+)
+
+# Auto-allow cat/head/tail for reading snapshot files
+prefix_rule(
+    pattern = ["cat"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["head"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["tail"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["ls"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["find"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["grep"],
+    decision = "allow",
+)
+
+# Forbid destructive kubectl operations
+prefix_rule(
+    pattern = ["kubectl", ["delete", "apply", "create", "patch", "edit", "replace", "scale"]],
+    decision = "forbidden",
+)
+
+# Forbid any code modification commands
+prefix_rule(
+    pattern = ["rm"],
+    decision = "forbidden",
+)
+
+prefix_rule(
+    pattern = ["mv"],
+    decision = "forbidden",
+)

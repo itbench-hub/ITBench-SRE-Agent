@@ -209,12 +209,11 @@ class LAAJEvaluator:
                     if not is_on_path:
                         prox["score"] = 0
         
-        # Extract all 7 metric scores into a structured format
+        # Extract 6 metric scores into a structured format (excluding fault_localization)
         metrics = {
             "root_cause_entity": scores.get("root_cause_entity", {}).get("score", 0),
             "root_cause_reasoning": scores.get("root_cause_reasoning", {}).get("score", 0),
             "propagation_chain": scores.get("propagation_chain", {}).get("score", 0),
-            "fault_localization": scores.get("fault_localization", {}).get("score", 0),
             "root_cause_reasoning_partial": scores.get("root_cause_reasoning_partial", {}).get("score", 0),
             "root_cause_proximity_no_fp": scores.get("root_cause_proximity_no_fp", {}).get("score", 0),
             "root_cause_proximity_with_fp": scores.get("root_cause_proximity_with_fp", {}).get("score", 0),

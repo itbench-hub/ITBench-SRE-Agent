@@ -15,6 +15,7 @@ import subprocess
 import sys
 import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -132,8 +133,13 @@ class ScrollingOutput:
         self.lines = []
 
 
-def run_agent(scenario_path: Path, config_path: Optional[str] = None, show_output: bool = True) -> str:
-    """Run the SRE agent on a scenario with live streaming output."""
+def run_agent(scenario_path: Path, config_path: Optional[str] = None, show_output: bool = True) -> Tuple[str, float]:
+    """
+    Run the SRE agent on a scenario with live streaming output.
+    
+    Returns:
+        Tuple of (output_string, duration_seconds)
+    """
     cmd = [
         sys.executable, "-m", "sre_support_agent",
         "--dir", str(scenario_path),
@@ -145,6 +151,8 @@ def run_agent(scenario_path: Path, config_path: Optional[str] = None, show_outpu
     
     # Pass current environment to subprocess (includes AGENT_ANALYTICS_LOGS_DIR)
     env = os.environ.copy()
+    
+    start_time = time.time()
     
     try:
         if show_output:
@@ -173,8 +181,10 @@ def run_agent(scenario_path: Path, config_path: Optional[str] = None, show_outpu
             except subprocess.TimeoutExpired:
                 process.kill()
                 scroller.clear()
-                return "ERROR: Agent timed out after 10 minutes"
+                duration = time.time() - start_time
+                return "ERROR: Agent timed out after 10 minutes", duration
             
+            duration = time.time() - start_time
             full_output = scroller.get_full_output()
             
             # Clear scrolling window and show final diagnosis
@@ -190,7 +200,7 @@ def run_agent(scenario_path: Path, config_path: Optional[str] = None, show_outpu
                     print(f"    │ ... [{diagnosis.count(chr(10)) - 20} more lines]")
                 print("    └──────────────────────────────────────────────────────")
             
-            return full_output
+            return full_output, duration
         else:
             # Silent mode
             result = subprocess.run(
@@ -201,12 +211,15 @@ def run_agent(scenario_path: Path, config_path: Optional[str] = None, show_outpu
                 cwd=Path(__file__).parent,
                 env=env
             )
-            return result.stdout + result.stderr
+            duration = time.time() - start_time
+            return result.stdout + result.stderr, duration
             
     except subprocess.TimeoutExpired:
-        return "ERROR: Agent timed out after 10 minutes"
+        duration = time.time() - start_time
+        return "ERROR: Agent timed out after 10 minutes", duration
     except Exception as e:
-        return f"ERROR: Failed to run agent: {e}"
+        duration = time.time() - start_time
+        return f"ERROR: Failed to run agent: {e}", duration
 
 
 def extract_final_diagnosis(output: str) -> Optional[str]:
@@ -367,7 +380,6 @@ METRIC_NAMES = [
     "root_cause_entity",
     "root_cause_reasoning",
     "propagation_chain",
-    "fault_localization",
     "root_cause_reasoning_partial",
     "root_cause_proximity_no_fp",
     "root_cause_proximity_with_fp",
@@ -397,6 +409,28 @@ def calculate_metric_stats(runs: List[Dict]) -> Dict[str, Dict[str, float]]:
         }
     
     return metric_stats
+
+
+def calculate_duration_stats(runs: List[Dict]) -> Dict[str, float]:
+    """
+    Calculate average, min, max duration across all runs.
+    
+    Args:
+        runs: List of run results, each containing a 'duration_seconds' field
+        
+    Returns:
+        Dict with avg, min, max duration in seconds
+    """
+    durations = [run.get("duration_seconds", 0) for run in runs if run.get("duration_seconds")]
+    
+    if not durations:
+        return {"avg": 0, "min": 0, "max": 0}
+    
+    return {
+        "avg": sum(durations) / len(durations),
+        "min": min(durations),
+        "max": max(durations),
+    }
 
 
 # ============================================================================
@@ -443,7 +477,7 @@ def run_single_iteration(
         print(f"    🔄 [{scenario_name}] Starting run {run_num}...")
     
     # Run the agent (always quiet in concurrent mode to avoid output interleaving)
-    agent_output_raw = run_agent(
+    agent_output_raw, duration = run_agent(
         scenario_path,
         config_path=config_path,
         show_output=False  # Always quiet in concurrent mode
@@ -454,15 +488,15 @@ def run_single_iteration(
     
     if not agent_output:
         with _print_lock:
-            print(f"    ❌ [{scenario_name}] Run {run_num}: Failed to parse agent output")
+            print(f"    ❌ [{scenario_name}] Run {run_num}: Failed to parse agent output ({duration:.1f}s)")
         return {
             "run": run_num,
             "score": 0,
+            "duration_seconds": duration,
             "metrics": {
                 "root_cause_entity": 0,
                 "root_cause_reasoning": 0,
                 "propagation_chain": 0,
-                "fault_localization": 0,
                 "root_cause_reasoning_partial": 0,
                 "root_cause_proximity_no_fp": 0,
                 "root_cause_proximity_with_fp": 0,
@@ -495,11 +529,12 @@ def run_single_iteration(
     
     score_icon = "✅" if score == 100 else "❌"
     with _print_lock:
-        print(f"    {score_icon} [{scenario_name}] Run {run_num}: Score {score}/100")
+        print(f"    {score_icon} [{scenario_name}] Run {run_num}: Score {score}/100 ({duration:.1f}s)")
     
     return {
         "run": run_num,
         "score": score,
+        "duration_seconds": duration,
         "metrics": metrics,
         "justification": justification,
         "error": error,
@@ -860,6 +895,7 @@ Examples:
             scenario_results["min_score"] = min(current_scores) if current_scores else 0
             scenario_results["max_score"] = max(current_scores) if current_scores else 0
             scenario_results["metric_stats"] = calculate_metric_stats(scenario_results["runs"])
+            scenario_results["duration_stats"] = calculate_duration_stats(scenario_results["runs"])
             
             try:
                 with open(output_path, "w") as f:
@@ -879,30 +915,30 @@ Examples:
                 else:
                     print(f"    ▶️  Running agent (quiet mode)...", end="", flush=True)
                 
-                agent_output_raw = run_agent(
+                agent_output_raw, duration = run_agent(
                     scenario_path,
                     config_path=temp_config_path or args.config,
                     show_output=not args.quiet
                 )
                 
                 if args.quiet:
-                    print(" done.")
+                    print(f" done ({duration:.1f}s).")
                 
                 # Parse agent output
                 agent_output = parse_agent_output(agent_output_raw)
                 
                 if not agent_output:
-                    print(f"\n    ❌ Failed to parse agent output")
+                    print(f"\n    ❌ Failed to parse agent output ({duration:.1f}s)")
                     print(f"    💡 Last 500 chars of output:")
                     print(f"       {agent_output_raw[-500:]}")
                     run_result = {
                         "run": run_idx + 1,
                         "score": 0,
+                        "duration_seconds": duration,
                         "metrics": {
                             "root_cause_entity": 0,
                             "root_cause_reasoning": 0,
                             "propagation_chain": 0,
-                            "fault_localization": 0,
                             "root_cause_reasoning_partial": 0,
                             "root_cause_proximity_no_fp": 0,
                             "root_cause_proximity_with_fp": 0,
@@ -955,6 +991,7 @@ Examples:
                     run_result = {
                         "run": run_idx + 1,
                         "score": score,
+                        "duration_seconds": duration,
                         "metrics": metrics,
                         "justification": justification,
                         "error": error,
@@ -974,6 +1011,7 @@ Examples:
                 scenario_results["min_score"] = min(current_scores) if current_scores else 0
                 scenario_results["max_score"] = max(current_scores) if current_scores else 0
                 scenario_results["metric_stats"] = calculate_metric_stats(scenario_results["runs"])
+                scenario_results["duration_stats"] = calculate_duration_stats(scenario_results["runs"])
                 
                 # Write intermediate results to disk
                 try:
@@ -991,11 +1029,16 @@ Examples:
         # Calculate per-metric statistics
         scenario_results["metric_stats"] = calculate_metric_stats(scenario_results["runs"])
         
+        # Calculate duration statistics
+        scenario_results["duration_stats"] = calculate_duration_stats(scenario_results["runs"])
+        
         results["scenarios"][scenario_name] = scenario_results
         total_scores.extend(scores)
         
+        duration_avg = scenario_results["duration_stats"]["avg"]
         print(f"\n  📈 Scenario Summary: avg={scenario_results['avg_score']:.1f}, "
-              f"min={scenario_results['min_score']}, max={scenario_results['max_score']}")
+              f"min={scenario_results['min_score']}, max={scenario_results['max_score']}, "
+              f"avg_time={duration_avg:.1f}s")
     
     # Calculate overall metric averages across all scenarios
     overall_metric_avgs = {}
@@ -1006,6 +1049,20 @@ Examples:
         ]
         overall_metric_avgs[metric_name] = sum(scenario_avgs) / len(scenario_avgs) if scenario_avgs else 0
     
+    # Calculate overall duration stats
+    all_durations = []
+    for s in results["scenarios"].values():
+        for run in s.get("runs", []):
+            if run.get("duration_seconds"):
+                all_durations.append(run["duration_seconds"])
+    
+    overall_duration = {
+        "avg": sum(all_durations) / len(all_durations) if all_durations else 0,
+        "min": min(all_durations) if all_durations else 0,
+        "max": max(all_durations) if all_durations else 0,
+        "total": sum(all_durations) if all_durations else 0,
+    }
+    
     # Calculate overall summary
     results["summary"] = {
         "total_scenarios": len(results["scenarios"]),
@@ -1015,7 +1072,8 @@ Examples:
         "overall_max_score": max(total_scores) if total_scores else 0,
         "scenarios_with_perfect_score": sum(1 for s in results["scenarios"].values() if s["max_score"] == 100),
         "scenarios_with_any_success": sum(1 for s in results["scenarios"].values() if s["max_score"] > 0),
-        "metric_averages": overall_metric_avgs
+        "metric_averages": overall_metric_avgs,
+        "duration": overall_duration
     }
     
     # Clean up temp config

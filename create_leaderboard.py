@@ -1005,13 +1005,22 @@ Environment Variables:
     for scenario_path in all_scenarios:
         scenario_name = scenario_path.name
         
-        # Check if already completed
+        # Check if already completed - validate against actual files on disk
         existing_scenario = results["scenarios"].get(scenario_name)
-        if existing_scenario and len(existing_scenario.get("runs", [])) >= args.runs:
-            print(f"\n⏭️  Skipping {scenario_name} (already completed)")
-            total_scores.extend(existing_scenario.get("scores", []))
-            total_inferences.extend([r.get("inference_count", 0) for r in existing_scenario.get("runs", [])])
-            continue
+        if existing_scenario:
+            # Count only runs that have agent_output.json on disk
+            valid_run_count = 0
+            for i, run_data in enumerate(existing_scenario.get("runs", [])):
+                run_num = run_data.get("run", i + 1)
+                agent_output_file = output_dir / scenario_name / str(run_num) / "agent_output.json"
+                if agent_output_file.exists():
+                    valid_run_count += 1
+            
+            if valid_run_count >= args.runs:
+                print(f"\n⏭️  Skipping {scenario_name} (already completed: {valid_run_count}/{args.runs} runs)")
+                total_scores.extend(existing_scenario.get("scores", []))
+                total_inferences.extend([r.get("inference_count", 0) for r in existing_scenario.get("runs", [])])
+                continue
         
         print(f"\n{'='*60}")
         print(f"📁 Scenario: {scenario_name}")
@@ -1036,7 +1045,23 @@ Environment Variables:
             # Initialize scenario results
             if existing_scenario:
                 scenario_results = existing_scenario
-                completed_runs = len(scenario_results.get("runs", []))
+                # Validate which runs actually have agent_output.json on disk
+                valid_runs = []
+                valid_scores = []
+                for i, run_data in enumerate(scenario_results.get("runs", [])):
+                    run_num = run_data.get("run", i + 1)
+                    agent_output_file = output_dir / scenario_name / str(run_num) / "agent_output.json"
+                    if agent_output_file.exists():
+                        valid_runs.append(run_data)
+                        if i < len(scenario_results.get("scores", [])):
+                            valid_scores.append(scenario_results["scores"][i])
+                    else:
+                        print(f"  ⚠️  Run {run_num} missing agent_output.json, will re-run")
+                
+                # Update with only valid runs
+                scenario_results["runs"] = valid_runs
+                scenario_results["scores"] = valid_scores
+                completed_runs = len(valid_runs)
             else:
                 scenario_results = {"runs": [], "scores": []}
                 completed_runs = 0

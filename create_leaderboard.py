@@ -10,10 +10,12 @@ Each run is tagged with git branch/commit for tracking improvements.
 """
 
 import argparse
+import atexit
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -21,11 +23,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
 
 from evaluation import LAAJEvaluator
+
+# Track hidden ground truth files for cleanup on interrupt
+_hidden_scenarios: Set[Tuple[Path, str]] = set()
 
 
 # ============================================================================
@@ -205,9 +210,117 @@ def parse_traces(traces_file: Path) -> Dict[str, Any]:
 # Utility Functions
 # ============================================================================
 
-def load_ground_truth(scenario_path: Path) -> Optional[Dict]:
-    """Load ground truth YAML file from scenario directory."""
+# Anti-cheat: Hidden location for ground truth during agent execution
+HIDDEN_GT_BASE = Path("/tmp/no_access")
+
+
+def get_hidden_gt_path(scenario_name: str) -> Path:
+    """Get the hidden path for ground truth file."""
+    return HIDDEN_GT_BASE / scenario_name / "ground_truth.yaml"
+
+
+def hide_ground_truth(scenario_path: Path, scenario_name: str) -> Optional[Path]:
+    """Move ground_truth.yaml to hidden location to prevent agent from cheating.
+    
+    Returns:
+        Path to hidden ground truth file, or None if no ground truth exists
+    """
+    original_path = scenario_path / "ground_truth.yaml"
+    if not original_path.exists():
+        print(f"  ⚠️  No ground_truth.yaml found at {original_path}")
+        return None
+    
+    hidden_path = get_hidden_gt_path(scenario_name)
+    hidden_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Move the file
+    try:
+        shutil.move(str(original_path), str(hidden_path))
+        
+        # Verify the move actually worked
+        if original_path.exists():
+            print(f"  ❌ ERROR: File still exists at original location after move!")
+            return None
+        if not hidden_path.exists():
+            print(f"  ❌ ERROR: File not found at hidden location after move!")
+            return None
+            
+    except Exception as e:
+        print(f"  ❌ ERROR hiding ground truth: {e}")
+        return None
+    
+    # Track for cleanup on interrupt
+    _hidden_scenarios.add((scenario_path, scenario_name))
+    
+    return hidden_path
+
+
+def restore_ground_truth(scenario_path: Path, scenario_name: str) -> bool:
+    """Restore ground_truth.yaml from hidden location back to scenario folder.
+    
+    Returns:
+        True if restored, False if nothing to restore
+    """
+    hidden_path = get_hidden_gt_path(scenario_name)
+    original_path = scenario_path / "ground_truth.yaml"
+    
+    if not hidden_path.exists():
+        _hidden_scenarios.discard((scenario_path, scenario_name))
+        return False
+    
+    # Move back
+    shutil.move(str(hidden_path), str(original_path))
+    
+    # Remove from tracking
+    _hidden_scenarios.discard((scenario_path, scenario_name))
+    
+    # Clean up empty hidden directory
+    try:
+        hidden_path.parent.rmdir()
+    except OSError:
+        pass  # Directory not empty or other issue, ignore
+    
+    return True
+
+
+def cleanup_hidden_ground_truths():
+    """Restore all hidden ground truth files - called on exit/interrupt."""
+    if not _hidden_scenarios:
+        return
+    
+    print("\n⚠️  Restoring hidden ground truth files...")
+    for scenario_path, scenario_name in list(_hidden_scenarios):
+        if restore_ground_truth(scenario_path, scenario_name):
+            print(f"  🔓 Restored: {scenario_name}")
+    print("✅ All ground truth files restored")
+
+
+def _signal_handler(signum, frame):
+    """Handle interrupt signals to ensure cleanup."""
+    cleanup_hidden_ground_truths()
+    sys.exit(1)
+
+
+# Register cleanup handlers
+atexit.register(cleanup_hidden_ground_truths)
+signal.signal(signal.SIGINT, _signal_handler)
+signal.signal(signal.SIGTERM, _signal_handler)
+
+
+def load_ground_truth(scenario_path: Path, scenario_name: str = None) -> Optional[Dict]:
+    """Load ground truth YAML file.
+    
+    Checks both the original scenario path and hidden location.
+    """
+    # First check original location
     gt_path = scenario_path / "ground_truth.yaml"
+    
+    # If not in original, check hidden location
+    if not gt_path.exists() and scenario_name:
+        hidden_path = get_hidden_gt_path(scenario_name)
+        if hidden_path.exists():
+            gt_path = hidden_path
+    
     if not gt_path.exists():
         print(f"  ⚠️  No ground_truth.yaml found in {scenario_path}")
         return None
@@ -306,11 +419,9 @@ def run_agentz(
     run_output_dir.mkdir(parents=True, exist_ok=True)
     agent_output_path = run_output_dir / "agent_output.json"
     
-    # Build descriptive trace filename: {model_provider}_{model}_{scenario}_{run}.jsonl
-    # Sanitize model name (replace / with _)
-    safe_model = model.replace("/", "_").replace("\\", "_")
-    safe_provider = model_provider.replace("/", "_").replace("\\", "_")
-    trace_filename = f"{safe_provider}_{safe_model}_{scenario_name}_{run_id}.jsonl"
+    # Trace filename: {scenario}_{run}.jsonl
+    # Model/version info is already in the traces_dir path
+    trace_filename = f"{scenario_name}_{run_id}.jsonl"
     traces_path = traces_dir / trace_filename
     
     # If no port provided and collecting traces, disable traces
@@ -782,22 +893,17 @@ Environment Variables:
     
     project_root = Path(__file__).parent
     
-    # Set up output directories
+    # Set up base results directory
     results_dir = project_root / "website" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     
-    # Agent artifacts go to results/raw/ by default
-    output_dir = Path(args.output_dir) if args.output_dir else (results_dir / "raw")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Show configuration
+    # Show configuration (output dirs shown after version tag is computed)
     masked_key = f"{judge_api_key[:8]}...{judge_api_key[-4:]}" if len(judge_api_key) > 12 else "***"
     print(f"\n🔧 Configuration:")
     print(f"   Agent Model:    {args.model}")
     print(f"   Agent Provider: {args.model_provider}")
     print(f"   Judge Model:    {args.judge_model}")
     print(f"   Judge API Key:  {masked_key}")
-    print(f"   Output Dir:     {output_dir}")
     print(f"   Collect Traces: {not args.no_traces}")
     print()
     
@@ -844,17 +950,32 @@ Environment Variables:
     # Model name for output file (includes version tag for tracking)
     model_name_clean = f"{args.model_provider}_{args.model}".replace("/", "_").replace(":", "_")
     
+    # Unique run identifier: model + version tag
+    # This ensures each model/branch/commit combination has its own artifacts
+    run_identifier = f"{model_name_clean}_{version_tag}"
+    
+    # Agent artifacts go to results/raw/{run_identifier}/ 
+    # Each model+version gets its own subdirectory
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        output_dir = results_dir / "raw" / run_identifier
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Traces go in results/traces/{run_identifier}/
+    # Each model+version gets its own traces subdirectory
+    traces_dir = results_dir / "traces" / run_identifier
+    traces_dir.mkdir(parents=True, exist_ok=True)
+    
     # Result file path - includes version tag so each branch/commit is tracked separately
     if args.output:
         output_path = Path(args.output)
     else:
-        output_path = results_dir / f"result_{model_name_clean}_{version_tag}.json"
+        output_path = results_dir / f"result_{run_identifier}.json"
     
-    print(f"📄 Output: {output_path.name}")
-    
-    # Traces go in a traces subdirectory
-    traces_dir = results_dir / "traces"
-    traces_dir.mkdir(parents=True, exist_ok=True)
+    print(f"📄 Result:  {output_path.name}")
+    print(f"📂 Raw:     {output_dir.relative_to(project_root)}")
+    print(f"📊 Traces:  {traces_dir.relative_to(project_root)}")
     
     # Initialize or load existing results
     results = {
@@ -896,51 +1017,38 @@ Environment Variables:
         print(f"📁 Scenario: {scenario_name}")
         print(f"{'='*60}")
         
-        ground_truth = load_ground_truth(scenario_path)
-        if not ground_truth:
-            print(f"  ⏭️  Skipping (no ground truth)")
-            continue
-        
-        # Initialize scenario results
-        if existing_scenario:
-            scenario_results = existing_scenario
-            completed_runs = len(scenario_results.get("runs", []))
-        else:
-            scenario_results = {"runs": [], "scores": []}
-            completed_runs = 0
-        
-        # Run iterations
-        if args.concurrent:
-            run_results = run_scenario_concurrent(
-                scenario_path=scenario_path,
-                scenario_name=scenario_name,
-                ground_truth=ground_truth,
-                num_runs=args.runs,
-                completed_runs=completed_runs,
-                model=args.model,
-                model_provider=args.model_provider,
-                output_dir=output_dir,
-                traces_dir=traces_dir,
-                judge_model=args.judge_model,
-                judge_base_url=args.judge_base_url,
-                judge_api_key=judge_api_key,
-                max_workers=args.max_workers,
-                collect_traces=not args.no_traces,
-            )
+        # Anti-cheat: Hide ground truth before agent runs
+        # This prevents the agent from reading the answers
+        gt_hidden = False
+        try:
+            print(f"  📂 Scenario path: {scenario_path}")
+            hidden_path = hide_ground_truth(scenario_path, scenario_name)
+            if hidden_path:
+                gt_hidden = True
+                print(f"  🔒 Ground truth hidden: {hidden_path}")
             
-            for r in run_results:
-                scenario_results["runs"].append(r)
-                scenario_results["scores"].append(r["score"])
-        else:
-            # Sequential execution - can use fixed port since only one at a time
-            for run_idx in range(completed_runs, args.runs):
-                print(f"\n  🔄 Run {run_idx + 1}/{args.runs}")
-                
-                result = run_single_iteration(
-                    run_idx=run_idx,
+            # Load ground truth from hidden location (for judge)
+            ground_truth = load_ground_truth(scenario_path, scenario_name)
+            if not ground_truth:
+                print(f"  ⏭️  Skipping (no ground truth)")
+                continue
+            
+            # Initialize scenario results
+            if existing_scenario:
+                scenario_results = existing_scenario
+                completed_runs = len(scenario_results.get("runs", []))
+            else:
+                scenario_results = {"runs": [], "scores": []}
+                completed_runs = 0
+            
+            # Run iterations
+            if args.concurrent:
+                run_results = run_scenario_concurrent(
                     scenario_path=scenario_path,
                     scenario_name=scenario_name,
                     ground_truth=ground_truth,
+                    num_runs=args.runs,
+                    completed_runs=completed_runs,
                     model=args.model,
                     model_provider=args.model_provider,
                     output_dir=output_dir,
@@ -948,17 +1056,47 @@ Environment Variables:
                     judge_model=args.judge_model,
                     judge_base_url=args.judge_base_url,
                     judge_api_key=judge_api_key,
+                    max_workers=args.max_workers,
                     collect_traces=not args.no_traces,
-                    otel_port=4318 if not args.no_traces else None,
                 )
                 
-                scenario_results["runs"].append(result)
-                scenario_results["scores"].append(result["score"])
-                
-                # Save progress
-                results["scenarios"][scenario_name] = scenario_results
-                with open(output_path, "w") as f:
-                    json.dump(results, f, indent=2)
+                for r in run_results:
+                    scenario_results["runs"].append(r)
+                    scenario_results["scores"].append(r["score"])
+            else:
+                # Sequential execution - can use fixed port since only one at a time
+                for run_idx in range(completed_runs, args.runs):
+                    print(f"\n  🔄 Run {run_idx + 1}/{args.runs}")
+                    
+                    result = run_single_iteration(
+                        run_idx=run_idx,
+                        scenario_path=scenario_path,
+                        scenario_name=scenario_name,
+                        ground_truth=ground_truth,
+                        model=args.model,
+                        model_provider=args.model_provider,
+                        output_dir=output_dir,
+                        traces_dir=traces_dir,
+                        judge_model=args.judge_model,
+                        judge_base_url=args.judge_base_url,
+                        judge_api_key=judge_api_key,
+                        collect_traces=not args.no_traces,
+                        otel_port=4318 if not args.no_traces else None,
+                    )
+                    
+                    scenario_results["runs"].append(result)
+                    scenario_results["scores"].append(result["score"])
+                    
+                    # Save progress
+                    results["scenarios"][scenario_name] = scenario_results
+                    with open(output_path, "w") as f:
+                        json.dump(results, f, indent=2)
+        
+        finally:
+            # Always restore ground truth to preserve dataset integrity
+            if gt_hidden:
+                if restore_ground_truth(scenario_path, scenario_name):
+                    print(f"  🔓 Ground truth restored")
         
         # Calculate scenario statistics
         scores = scenario_results["scores"]

@@ -1,0 +1,2076 @@
+"""
+SRE utility tool implementations.
+
+These tools help with incident investigation by parsing and analyzing
+Kubernetes events, metrics, and alerts, and building operational topologies.
+
+Can be run as:
+- MCP server: python -m sre_tools.cli.sre_utils
+- CLI tool: python -m sre_tools.cli.sre_utils.tools --arch-file ... --k8s-objects-file ... --output-file ...
+- Python API: from sre_tools.cli.sre_utils.tools import build_topology_standalone
+"""
+
+import csv
+import json
+import statistics
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Optional, List, Dict
+
+try:
+    import pandas as pd
+    import numpy as np
+except ImportError:
+    pd = None
+    np = None
+
+from mcp.server import Server
+from mcp.types import Tool, TextContent
+
+from sre_tools.utils import read_tsv_file, read_json_file, format_timestamp, truncate_string
+
+
+def register_tools(server: Server) -> None:
+    """Register all SRE utility tools with the MCP server.
+    
+    Args:
+        server: The MCP Server instance to register tools with.
+    """
+    
+    @server.list_tools()
+    async def list_tools() -> list[Tool]:
+        """Return the list of available tools."""
+        return [
+            Tool(
+                name="build_topology",
+                description="Build an operational topology graph from application architecture and Kubernetes objects. "
+                           "Creates nodes and edges representing services, pods, deployments, and their relationships. "
+                           "Writes JSON topology with nodes (id, kind, name) and edges (source, relation, target) to output file.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "arch_file": {
+                            "type": "string",
+                            "description": "Path to application architecture JSON file (e.g., app/arch.json or app/app.json)"
+                        },
+                        "k8s_objects_file": {
+                            "type": "string",
+                            "description": "Path to Kubernetes objects TSV file (e.g., k8s_objects_otel-demo_chaos-mesh.tsv)"
+                        },
+                        "output_file": {
+                            "type": "string",
+                            "description": "Path to write the topology JSON output (e.g., operational_topology.json)"
+                        }
+                    },
+                    "required": ["arch_file", "k8s_objects_file", "output_file"]
+                }
+            ),
+            Tool(
+                name="topology_analysis",
+                description="Analyzes the operational topology graph - shows ALL relationships for an entity in one call. "
+                            "Returns: infra hierarchy (Namespace→Deployment→ReplicaSet→Pod), call chains, callers/callees, dependencies. "
+                            "Tip: If topology_file doesn't exist, first build it with build_topology (only needs to be built once per scenario). "
+                            "Example: topology_analysis(topology_file='topology.json', entity='flagd') returns everything about flagd. "
+                            "Example: topology_analysis(topology_file='topology.json', entity='checkout-service') shows call chains, dependencies, infrastructure.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "topology_file": {
+                            "type": "string",
+                            "description": "Path to topology JSON file (output from build_topology)"
+                        },
+                        "entity": {
+                            "type": "string",
+                            "description": "Entity to analyze (name or partial match, e.g., 'checkout', 'flagd', 'frontend')"
+                        }
+                    },
+                    "required": ["topology_file", "entity"]
+                }
+            ),
+            Tool(
+                name="metric_analysis",
+                description="Analyzes metrics for K8s objects. Supports batch queries, derived metrics (eval), grouping, and aggregation. "
+                            "Works like SQL/Pandas: filter -> eval -> group_by -> agg. "
+                            "Example: CPU throttle % per deployment: object_pattern='pod/*', "
+                            "metric_names=['container_cpu_cfs_throttled_periods_total', 'container_cpu_cfs_periods_total'], "
+                            "eval='throttle_pct = container_cpu_cfs_throttled_periods_total / container_cpu_cfs_periods_total * 100', "
+                            "group_by='deployment', agg='max'. "
+                            "Example: Peak cluster memory %: object_pattern='pod/*', "
+                            "metric_names=['container_memory_usage_bytes', 'cluster:namespace:pod_memory:active:kube_pod_container_resource_limits'], "
+                            "eval='mem_pct = container_memory_usage_bytes / cluster_namespace_pod_memory_active_kube_pod_container_resource_limits * 100', "
+                            "agg='max'. "
+                            "Metric names with special chars are AUTO-SANITIZED (: -> _). "
+                            "Tip: group_by='timestamp' for time series, group_by='deployment' for per-deployment.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "base_dir": {
+                            "type": "string",
+                            "description": "Base directory where metric files are located"
+                        },
+                        "k8_object_name": {
+                            "type": "string",
+                            "description": "Optional: Specific K8s object (format '<kind>/<name>'). Omit to analyze ALL objects."
+                        },
+                        "object_pattern": {
+                            "type": "string",
+                            "description": "Optional: Glob pattern for objects (e.g., 'pod/*', 'pod/frontend*', 'service/*'). Default: '*' (all)"
+                        },
+                        "metric_names": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional: List of metric names to load. If omitted, loads all metrics."
+                        },
+                        "eval": {
+                            "type": "string",
+                            "description": "Optional: Pandas eval string for derived metrics (e.g. 'throttling_pct = throttled / total * 100')"
+                        },
+                        "filters": {
+                             "type": "object",
+                             "description": "Optional: Dictionary of exact matches for columns"
+                        },
+                        "group_by": {
+                            "type": "string",
+                            "description": "Optional: Column to group by. Special values: 'deployment' (auto-extracted from pod name), 'pod_name', 'metric_name'"
+                        },
+                        "agg": {
+                            "type": "string",
+                            "description": "Optional: Aggregation function (mean, sum, max, min). Default: mean"
+                        },
+                        "start_time": {
+                            "type": "string",
+                            "description": "Optional: Start timestamp (ISO 8601)"
+                        },
+                        "end_time": {
+                            "type": "string",
+                            "description": "Optional: End timestamp (ISO 8601)"
+                        }
+                    },
+                    "required": ["base_dir"]
+                }
+            ),
+            Tool(
+                name="get_metric_anomalies",
+                description="Reads and returns metrics and anomalies associated with a K8s object. "
+                            "Use this to check for CPU spikes, memory leaks, or error rate increases. "
+                            "Tip: Use metric_analysis first to identify relevant metric names. "
+                            "Example: Check for CPU throttling: metric_name_filter='throttled'. "
+                            "Example: Check for anomalies only: raw_content=False.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "k8_object_name": {
+                            "type": "string",
+                            "description": "Name of the K8s object (format '<kind>/<name>', e.g., 'pod/my-pod')"
+                        },
+                        "base_dir": {
+                            "type": "string",
+                            "description": "Base directory where metric files are located"
+                        },
+                        "metric_name_filter": {
+                            "type": "string",
+                            "description": "Optional: Only analyze metrics matching this name/substring"
+                        },
+                        "start_time": {
+                            "type": "string",
+                            "description": "Optional: Start timestamp (ISO 8601)"
+                        },
+                        "end_time": {
+                            "type": "string",
+                            "description": "Optional: End timestamp (ISO 8601). Can only be given if start_time is present."
+                        },
+                        "raw_content": {
+                            "type": "boolean",
+                            "description": "Optional: Include raw metric time series data (default: true)",
+                            "default": True
+                        }
+                    },
+                    "required": ["k8_object_name", "base_dir"]
+                }
+            ),
+            Tool(
+                name="event_analysis",
+                description="Analyzes Kubernetes events. Works like SQL: filter → group_by → agg. "
+                            "Supports multi-column grouping and multiple aggregation types. "
+                            "Example: Event count by reason: group_by='reason' (find Unhealthy, Killing, Failed). "
+                            "Example: Warnings per deployment: filters={'event_kind': 'Warning'}, group_by='deployment'. "
+                            "Example: Events per namespace and reason: group_by=['namespace', 'reason']. "
+                            "Example: First event per pod: group_by='object_name', agg='first'. "
+                            "Tip: Use group_by='deployment' to auto-extract deployment from pod names. "
+                            "Aggregations: 'count' (default), 'first', 'last', 'nunique', 'list'.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "events_file": {
+                            "type": "string",
+                            "description": "Path to the k8s_events TSV file"
+                        },
+                        "filters": {
+                             "type": "object",
+                             "description": "Optional: Column filters (e.g. {'reason': 'Unhealthy', 'event_kind': 'Warning', 'namespace': 'otel-demo'})"
+                        },
+                        "group_by": {
+                            "oneOf": [
+                                {"type": "string"},
+                                {"type": "array", "items": {"type": "string"}}
+                            ],
+                            "description": "Optional: Column(s) to group by. String or list. Special: 'deployment' extracts from pod names."
+                        },
+                        "agg": {
+                            "type": "string",
+                            "description": "Optional: Aggregation type - 'count' (default), 'first', 'last', 'nunique', 'list'"
+                        },
+                        "sort_by": {
+                            "type": "string",
+                            "description": "Optional: Column to sort by. Default: 'count' desc for grouped, 'timestamp' for raw."
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Optional: Max rows to return"
+                        },
+                        "start_time": {
+                            "type": "string",
+                            "description": "Optional: Start timestamp (ISO 8601)"
+                        },
+                        "end_time": {
+                            "type": "string",
+                            "description": "Optional: End timestamp (ISO 8601)"
+                        }
+                    },
+                    "required": ["events_file"]
+                }
+            ),
+            Tool(
+                name="get_trace_error_tree",
+                description="Generates a trace error tree with statistics summarized at each node. "
+                            "Use this to find the root cause of high latency or errors in a distributed transaction. "
+                            "The tree structure shows which service calls failed and propagates the error context up the stack. "
+                            "Example findings you might see: 'Checkout path broken... shipping quote failure: failed POST to email service: expected 200, got 400'. "
+                            "Example: Analyze all traces for a service: service_name='frontend'. "
+                            "Example: Compare before/after an incident: pivot_time='2023-10-27T10:00:00Z', delta_time='5m'.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "trace_file": {
+                            "type": "string",
+                            "description": "Path to the otel_traces TSV file"
+                        },
+                        "service_name": {
+                            "type": "string",
+                            "description": "Optional: Filter branches containing this service"
+                        },
+                        "pivot_time": {
+                            "type": "string",
+                            "description": "Optional: Pivot timestamp for before/after comparison (ISO 8601)"
+                        },
+                        "delta_time": {
+                            "type": "string",
+                            "description": "Optional: Duration for comparison window (e.g., '5m'). Default: 5m",
+                            "default": "5m"
+                        }
+                    },
+                    "required": ["trace_file"]
+                }
+            ),
+            Tool(
+                name="alert_analysis",
+                description="Analyzes alerts. Works like SQL: filter → group_by → agg. "
+                            "Computes duration_active (how long alert has been firing). "
+                            "Example: Alert count by type: group_by='alertname'. "
+                            "Example: Firing alerts by severity: filters={'state': 'firing'}, group_by='severity'. "
+                            "Example: Alerts per service: group_by='service_name'. "
+                            "Example: Long-running alerts: filters={'state': 'firing'}, sort_by='duration_active_min'. "
+                            "Column shortcuts: 'alertname', 'severity', 'service_name', 'namespace' (maps to labels.*). "
+                            "Aggregations: 'count' (default), 'first', 'last', 'sum', 'mean', 'max', 'min'.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "base_dir": {
+                            "type": "string",
+                            "description": "Base directory containing alert JSON files"
+                        },
+                        "filters": {
+                             "type": "object",
+                             "description": "Optional: Column filters (e.g. {'state': 'firing', 'severity': 'critical'})"
+                        },
+                        "group_by": {
+                            "oneOf": [
+                                {"type": "string"},
+                                {"type": "array", "items": {"type": "string"}}
+                            ],
+                            "description": "Optional: Column(s) to group by. Shortcuts: alertname, severity, service_name, namespace."
+                        },
+                        "agg": {
+                            "type": "string",
+                            "description": "Optional: Aggregation - 'count' (default), 'first', 'last', 'sum', 'mean', 'max', 'min'"
+                        },
+                        "sort_by": {
+                            "type": "string",
+                            "description": "Optional: Column to sort by (e.g. 'duration_active_min', 'count')"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Optional: Max rows to return"
+                        },
+                        "start_time": {
+                            "type": "string",
+                            "description": "Optional: Filter alerts active after this time (ISO 8601)"
+                        },
+                        "end_time": {
+                            "type": "string",
+                            "description": "Optional: Filter alerts active before this time (ISO 8601)"
+                        }
+                    },
+                    "required": ["base_dir"]
+                }
+            ),
+        ]
+    
+    @server.call_tool()
+    async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle tool invocations."""
+        
+        if name == "build_topology":
+            return await _build_topology(arguments)
+        elif name == "topology_analysis":
+            return await _topology_analysis(arguments)
+        elif name == "metric_analysis":
+            return await _metric_analysis(arguments)
+        elif name == "get_metric_anomalies":
+            return await _get_metric_anomalies(arguments)
+        elif name == "event_analysis":
+            return await _event_analysis(arguments)
+        elif name == "get_trace_error_tree":
+            return await _get_trace_error_tree(arguments)
+        elif name == "alert_analysis":
+            return await _alert_analysis(arguments)
+        else:
+            return [TextContent(type="text", text=f"Unknown tool: {name}")]
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+def _parse_time(ts: str) -> datetime:
+    """Parse timestamp string to datetime object."""
+    try:
+        # Handle ISO format with Z
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        # Try other formats if needed
+        try:
+            return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S.%f")
+        except ValueError:
+             return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+
+def _parse_duration(duration_str: str) -> timedelta:
+    """Parse duration string (e.g., '5m', '1h') to timedelta."""
+    if not duration_str:
+        return timedelta(minutes=5)
+    
+    unit = duration_str[-1]
+    value = int(duration_str[:-1])
+    
+    if unit == 's':
+        return timedelta(seconds=value)
+    elif unit == 'm':
+        return timedelta(minutes=value)
+    elif unit == 'h':
+        return timedelta(hours=value)
+    elif unit == 'd':
+        return timedelta(days=value)
+    else:
+        return timedelta(minutes=5)  # Default
+
+# =============================================================================
+# Build Topology Tool Implementation
+# =============================================================================
+
+def _obj_id(kind: str, name: str, namespace: Optional[str] = None) -> str:
+    """Generate a simple, consistent object ID: Kind/name."""
+    return f"{kind}/{name}"
+
+
+class _TopologyBuilder:
+    """Helper class to build topology graphs with deduplication."""
+    
+    def __init__(self) -> None:
+        self.nodes: list[dict[str, Any]] = []
+        self.edges: list[dict[str, Any]] = []
+        self.node_ids: set[str] = set()
+        self.edge_ids: set[tuple] = set()
+
+    def add_node(self, node: dict[str, Any]) -> None:
+        nid = node["id"]
+        if nid not in self.node_ids:
+            self.node_ids.add(nid)
+            self.nodes.append(node)
+
+    def _edge_key(self, source: str, relation: str, target: str, meta: Optional[dict[str, Any]]) -> tuple:
+        meta_tuple = tuple(sorted(meta.items())) if meta else None
+        return (source, relation, target, meta_tuple)
+
+    def add_edge(self, source: str, relation: str, target: str, meta: Optional[dict[str, Any]] = None) -> None:
+        key = self._edge_key(source, relation, target, meta)
+        if key not in self.edge_ids:
+            self.edge_ids.add(key)
+            edge = {"source": source, "relation": relation, "target": target}
+            if meta:
+                edge["meta"] = meta
+            self.edges.append(edge)
+
+
+def _load_k8s_objects_for_topology(path: Path) -> list[dict[str, Any]]:
+    """Load K8s objects from TSV file with body parsing."""
+    rows = list(csv.DictReader(path.read_text().splitlines(), delimiter="\t"))
+    objs = []
+    for row in rows:
+        body = json.loads(row.get("body", "{}"))
+        objs.append({**row, "body": body})
+    return objs
+
+
+def _do_build_topology(arch_path: Path, k8s_path: Path) -> dict[str, Any]:
+    """Build operational topology from architecture and K8s objects."""
+    builder = _TopologyBuilder()
+    arch = json.loads(arch_path.read_text())
+    k8s_objs = _load_k8s_objects_for_topology(k8s_path)
+
+    objects_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for obj in k8s_objs:
+        kind = obj.get("object_kind", "")
+        name = obj.get("object_name", "")
+        ns = obj.get("namespace") or ("default" if kind != "Namespace" else name)
+        objects_by_key[(kind, ns, name)] = obj
+
+    # Add namespaces
+    namespaces = set()
+    for obj in k8s_objs:
+        ns = obj.get("namespace")
+        if ns:
+            namespaces.add(ns)
+        if obj.get("object_kind") == "Namespace":
+            namespaces.add(obj.get("object_name"))
+    for ns in namespaces:
+        builder.add_node({"id": f"Namespace/{ns}", "kind": "Namespace", "name": ns})
+
+    # Add all K8s objects as nodes
+    for obj in k8s_objs:
+        kind = obj.get("object_kind", "")
+        name = obj.get("object_name", "")
+        ns = obj.get("namespace") if obj.get("namespace") else ("default" if kind != "Namespace" else name)
+        builder.add_node({"id": _obj_id(kind, name, ns), "kind": kind, "name": name, "namespace": ns})
+
+    # Add Node nodes from pod.spec.nodeName
+    for obj in k8s_objs:
+        if obj.get("object_kind") == "Pod":
+            node_name = obj.get("body", {}).get("spec", {}).get("nodeName")
+            if node_name:
+                builder.add_node({"id": f"Node/{node_name}", "kind": "Node", "name": node_name})
+
+    # Map Services for alias lookups
+    services: dict[str, dict[str, str]] = {}
+    for obj in k8s_objs:
+        if obj.get("object_kind") == "Service":
+            ns = obj.get("namespace") or "default"
+            services.setdefault(ns, {})[obj.get("object_name")] = _obj_id("Service", obj.get("object_name"), ns)
+
+    # Namespace contains objects
+    for obj in k8s_objs:
+        ns = obj.get("namespace")
+        if ns:
+            builder.add_edge(f"Namespace/{ns}", "contains", _obj_id(obj.get("object_kind"), obj.get("object_name")))
+
+    # Owner references
+    for obj in k8s_objs:
+        metadata = obj.get("body", {}).get("metadata", {})
+        owners = metadata.get("ownerReferences", []) or []
+        child_id = _obj_id(
+            obj.get("object_kind"),
+            obj.get("object_name"),
+            obj.get("namespace") or ("default" if obj.get("object_kind") != "Namespace" else obj.get("object_name")),
+        )
+        for ref in owners:
+            owner_ns = obj.get("namespace") if ref.get("kind") not in ["Node", "Namespace"] else None
+            owner_id = _obj_id(ref.get("kind"), ref.get("name"), owner_ns or obj.get("namespace") or "default")
+            builder.add_edge(owner_id, "contains", child_id)
+
+    # Service -> Endpoints
+    for obj in k8s_objs:
+        if obj.get("object_kind") == "Service":
+            ns = obj.get("namespace") or "default"
+            sid = _obj_id("Service", obj.get("object_name"), ns)
+            ep_key = ("Endpoints", ns, obj.get("object_name"))
+            if ep_key in objects_by_key:
+                builder.add_edge(sid, "contains", _obj_id("Endpoints", obj.get("object_name"), ns))
+
+    # Endpoints -> Pod via targetRef
+    for obj in k8s_objs:
+        if obj.get("object_kind") == "Endpoints":
+            ns = obj.get("namespace") or "default"
+            eid = _obj_id("Endpoints", obj.get("object_name"), ns)
+            subsets = obj.get("body", {}).get("subsets", []) or []
+            for subset in subsets:
+                addresses = (subset.get("addresses") or []) + (subset.get("notReadyAddresses") or [])
+                for addr in addresses:
+                    tref = addr.get("targetRef") or {}
+                    if tref.get("kind") == "Pod":
+                        pid = _obj_id("Pod", tref.get("name"), ns)
+                        builder.add_edge(eid, "contains", pid)
+
+    # Node -> Pod placement
+    for obj in k8s_objs:
+        if obj.get("object_kind") == "Pod":
+            ns = obj.get("namespace") or "default"
+            pid = _obj_id("Pod", obj.get("object_name"), ns)
+            node_name = obj.get("body", {}).get("spec", {}).get("nodeName")
+            if node_name:
+                builder.add_edge(f"Node/{node_name}", "contains", pid)
+
+    # Pod dependencies (service accounts, volumes, env refs)
+    telemetry_services = ["otel-collector", "flagd", "kafka", "valkey-cart", "postgresql"]
+    for obj in k8s_objs:
+        if obj.get("object_kind") != "Pod":
+            continue
+        ns = obj.get("namespace") or "default"
+        pid = _obj_id("Pod", obj.get("object_name"), ns)
+        spec = obj.get("body", {}).get("spec", {}) or {}
+        sa = spec.get("serviceAccountName")
+        if sa:
+            builder.add_edge(pid, "depends_on", _obj_id("ServiceAccount", sa, ns))
+
+        # Volumes
+        for vol in spec.get("volumes", []) or []:
+            if "configMap" in vol:
+                cm = vol["configMap"].get("name")
+                if cm:
+                    builder.add_edge(pid, "depends_on", _obj_id("ConfigMap", cm, ns))
+            if "secret" in vol:
+                sec = vol["secret"].get("secretName")
+                if sec:
+                    builder.add_edge(pid, "depends_on", _obj_id("Secret", sec, ns))
+            if "projected" in vol:
+                for src in vol["projected"].get("sources", []) or []:
+                    if "configMap" in src and src["configMap"].get("name"):
+                        builder.add_edge(pid, "depends_on", _obj_id("ConfigMap", src["configMap"]["name"], ns))
+                    if "secret" in src and src["secret"].get("name"):
+                        builder.add_edge(pid, "depends_on", _obj_id("Secret", src["secret"]["name"], ns))
+            if "persistentVolumeClaim" in vol:
+                pvc = vol["persistentVolumeClaim"].get("claimName")
+                if pvc:
+                    builder.add_edge(pid, "depends_on", _obj_id("PersistentVolumeClaim", pvc, ns))
+
+        def handle_env(container: dict[str, Any]) -> None:
+            for env in container.get("env", []) or []:
+                val_from = env.get("valueFrom") or {}
+                if "configMapKeyRef" in val_from and val_from["configMapKeyRef"].get("name"):
+                    builder.add_edge(pid, "depends_on", _obj_id("ConfigMap", val_from["configMapKeyRef"]["name"], ns))
+                if "secretKeyRef" in val_from and val_from["secretKeyRef"].get("name"):
+                    builder.add_edge(pid, "depends_on", _obj_id("Secret", val_from["secretKeyRef"]["name"], ns))
+                val = env.get("value")
+                if isinstance(val, str):
+                    for svc in telemetry_services:
+                        if svc in val:
+                            builder.add_edge(pid, "depends_on", _obj_id("Service", svc, ns))
+            for env_from in container.get("envFrom", []) or []:
+                if env_from.get("configMapRef", {}).get("name"):
+                    builder.add_edge(pid, "depends_on", _obj_id("ConfigMap", env_from["configMapRef"]["name"], ns))
+                if env_from.get("secretRef", {}).get("name"):
+                    builder.add_edge(pid, "depends_on", _obj_id("Secret", env_from["secretRef"]["name"], ns))
+
+        for container in spec.get("containers", []) or []:
+            handle_env(container)
+        for container in spec.get("initContainers", []) or []:
+            handle_env(container)
+
+    # High-level nodes (services + infrastructure from arch)
+    hl_services = [svc["name"] for svc in arch.get("components", {}).get("services", [])]
+    hl_infra = [item["name"] for item in arch.get("components", {}).get("infrastructure", [])]
+    hl_all = list(dict.fromkeys(hl_services + hl_infra))
+    for name in hl_all:
+        builder.add_node({"id": name, "kind": "App", "name": name})
+
+    # Map high-level names to actual Service names in Kubernetes
+    alias_map = {
+        "ad-service": "ad", "cart-service": "cart", "checkout-service": "checkout",
+        "currency-service": "currency", "product-catalog-service": "product-catalog",
+        "recommendation-service": "recommendation", "shipping-service": "shipping",
+        "product-reviews-service": "product-reviews", "email-service": "email",
+        "payment-service": "payment", "quote-service": "quote", "valkey": "valkey-cart",
+        "frontend-proxy": "frontend-proxy", "load-generator": "load-generator",
+        "frontend": "frontend", "kafka": "kafka", "postgresql": "postgresql",
+        "accounting-service": "accounting", "fraud-detection-service": "fraud-detection",
+        "opentelemetry-collector": "otel-collector",
+    }
+    default_ns = "otel-demo"
+
+    def resolve_service(name: str) -> Optional[str]:
+        mapped = alias_map.get(name, name)
+        if default_ns in services and mapped in services[default_ns]:
+            return services[default_ns][mapped]
+        return None
+
+    # Alias edges from high-level names to actual services
+    for hl_name in hl_all:
+        actual = resolve_service(hl_name)
+        if actual and actual != hl_name:
+            builder.add_edge(hl_name, "is_alias", actual)
+
+    # High-level dependencies (calls)
+    for dep in arch.get("dependencies", []):
+        src = dep["source"]
+        tgt = dep["target"]
+        meta = {k: v for k, v in dep.items() if k not in ["source", "target"]}
+
+        builder.add_node({"id": src, "kind": "App", "name": src})
+        builder.add_node({"id": tgt, "kind": "App", "name": tgt})
+
+        actual_target = resolve_service(tgt) or tgt
+        builder.add_edge(src, "calls", actual_target, meta if meta else None)
+
+    return {"nodes": builder.nodes, "edges": builder.edges}
+
+
+async def _build_topology(args: dict[str, Any]) -> list[TextContent]:
+    """Build operational topology from architecture and K8s objects."""
+    arch_file = args.get("arch_file", "")
+    k8s_objects_file = args.get("k8s_objects_file", "")
+    output_file = args.get("output_file", "")
+
+    if not output_file:
+        return [TextContent(type="text", text="Error: output_file is required")]
+
+    arch_path = Path(arch_file)
+    k8s_path = Path(k8s_objects_file)
+    output_path = Path(output_file)
+
+    if not arch_path.exists():
+        return [TextContent(type="text", text=f"Architecture file not found: {arch_file}")]
+    if not k8s_path.exists():
+        return [TextContent(type="text", text=f"K8s objects file not found: {k8s_objects_file}")]
+
+    try:
+        topology = _do_build_topology(arch_path, k8s_path)
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error building topology: {e}")]
+
+    # Write to output file
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(topology, indent=2))
+
+    # Build summary
+    summary = f"Topology written to {output_file}\n\n"
+    summary += f"**Nodes:** {len(topology['nodes'])}\n"
+    summary += f"**Edges:** {len(topology['edges'])}\n\n"
+
+    # Group nodes by kind
+    by_kind: dict[str, int] = {}
+    for node in topology["nodes"]:
+        kind = node.get("kind", "Unknown")
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+
+    summary += "## Node Types\n"
+    for kind, count in sorted(by_kind.items(), key=lambda x: -x[1]):
+        summary += f"- {kind}: {count}\n"
+
+    # Group edges by relation
+    by_relation: dict[str, int] = {}
+    for edge in topology["edges"]:
+        rel = edge.get("relation", "unknown")
+        by_relation[rel] = by_relation.get(rel, 0) + 1
+
+    summary += "\n## Edge Types\n"
+    for rel, count in sorted(by_relation.items(), key=lambda x: -x[1]):
+        summary += f"- {rel}: {count}\n"
+
+    return [TextContent(type="text", text=summary)]
+
+
+# =============================================================================
+# Topology Analysis Implementation
+# =============================================================================
+
+async def _topology_analysis(args: dict[str, Any]) -> list[TextContent]:
+    """Analyze operational topology - shows ALL relationships for an entity.
+    
+    Returns unified view containing:
+    1. Entity metadata (kind, name, namespace, aliases)
+    2. Direct relationships (explicit edges)
+    3. Relationships by type (grouped)
+    4. Backing infrastructure (Namespace -> Deployment -> ReplicaSet -> Pod)
+    5. Callers/callees (who calls this, what this calls)
+    6. Call chains to root and leaf services
+    7. Infrastructure dependencies (pods/deployments using this service)
+    """
+    topology_file = args.get("topology_file", "")
+    entity = args.get("entity", "")
+    
+    if not entity:
+        return [TextContent(type="text", text="Error: 'entity' is required")]
+    
+    topo_path = Path(topology_file)
+    if not topo_path.exists():
+        return [TextContent(type="text", text=f"Error: Topology file not found: {topology_file}. "
+                                              f"Build it first with build_topology tool.")]
+    
+    try:
+        topology = json.loads(topo_path.read_text())
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error reading topology: {e}")]
+    
+    nodes = topology.get("nodes", [])
+    edges = topology.get("edges", [])
+    
+    # Build lookup structures
+    nodes_by_id = {n["id"]: n for n in nodes}
+    
+    # Adjacency lists
+    outgoing: dict[str, list[tuple[str, str, dict]]] = {}
+    incoming: dict[str, list[tuple[str, str, dict]]] = {}
+    
+    for edge in edges:
+        src = edge.get("source", "")
+        tgt = edge.get("target", "")
+        rel = edge.get("relation", "")
+        meta = edge.get("metadata", {})
+        outgoing.setdefault(src, []).append((tgt, rel, meta))
+        incoming.setdefault(tgt, []).append((src, rel, meta))
+    
+    def find_node(query: str) -> Optional[str]:
+        """Find node by ID (Kind/name) or just name."""
+        # Exact ID match (Kind/name format)
+        if query in nodes_by_id:
+            return query
+        
+        # Case-insensitive ID match
+        query_lower = query.lower()
+        for node_id in nodes_by_id:
+            if node_id.lower() == query_lower:
+                return node_id
+        
+        # Match by name only - prefer App/Service
+        priority_kinds = ["App", "Service", "Deployment", "Pod", "ReplicaSet"]
+        for kind in priority_kinds:
+            for node in nodes:
+                if node.get("name", "").lower() == query_lower and node.get("kind") == kind:
+                    return node["id"]
+        
+        # Any name match
+        for node in nodes:
+            if node.get("name", "").lower() == query_lower:
+                return node["id"]
+        
+        # Partial match
+        for node_id in nodes_by_id:
+            if query_lower in node_id.lower():
+                return node_id
+        
+        return None
+    
+    def get_aliases(node_id: str) -> set[str]:
+        aliases = {node_id}
+        for tgt, rel, _ in outgoing.get(node_id, []):
+            if rel == "is_alias":
+                aliases.add(tgt)
+        for src, rel, _ in incoming.get(node_id, []):
+            if rel == "is_alias":
+                aliases.add(src)
+        return aliases
+    
+    def get_name(node_id: str) -> str:
+        """Get just the name from a node."""
+        return nodes_by_id.get(node_id, {}).get("name", node_id)
+    
+    # Find the entity
+    start_node = find_node(entity)
+    if not start_node:
+        available = [n for n in nodes_by_id.keys() if nodes_by_id[n].get("kind") in ["App", "Service", "Pod"]][:20]
+        return [TextContent(type="text", text=f"Error: Entity '{entity}' not found. Some available: {available}")]
+    
+    aliases = get_aliases(start_node)
+    node_info = nodes_by_id.get(start_node, {})
+    
+    # Build alias map for call graph normalization (Service -> App)
+    alias_map: dict[str, str] = {}
+    for src, targets in outgoing.items():
+        for tgt, rel, _ in targets:
+            if rel == "is_alias":
+                alias_map[tgt] = src
+    
+    def normalize(node: str) -> str:
+        """Normalize to canonical App name."""
+        return alias_map.get(node, node)
+    
+    # ========== BUILD UNIFIED RESULT ==========
+    result: dict[str, Any] = {
+        "entity": get_name(start_node),
+        "kind": node_info.get("kind"),
+        "name": node_info.get("name"),
+        "namespace": node_info.get("namespace"),
+        "aliases": sorted([a for a in aliases if a != start_node]),
+    }
+    
+    # ========== 1. DIRECT RELATIONSHIPS ==========
+    direct_rels = []
+    for node_id in aliases:
+        my_kind = nodes_by_id.get(node_id, {}).get("kind", "")
+        my_name = nodes_by_id.get(node_id, {}).get("name", node_id)
+        
+        for tgt, rel, _ in outgoing.get(node_id, []):
+            tgt_kind = nodes_by_id.get(tgt, {}).get("kind", "")
+            tgt_name = nodes_by_id.get(tgt, {}).get("name", tgt)
+            direct_rels.append(f"{my_kind}/{my_name} --{rel}--> {tgt_kind}/{tgt_name}")
+        
+        for src, rel, _ in incoming.get(node_id, []):
+            src_kind = nodes_by_id.get(src, {}).get("kind", "")
+            src_name = nodes_by_id.get(src, {}).get("name", src)
+            direct_rels.append(f"{src_kind}/{src_name} --{rel}--> {my_kind}/{my_name}")
+    
+    result["direct_relationships"] = sorted(set(direct_rels))
+    
+    # ========== 2. RELATIONSHIPS BY TYPE ==========
+    by_type: dict[str, list[str]] = {}
+    for node_id in aliases:
+        for tgt, rel, _ in outgoing.get(node_id, []):
+            tgt_kind = nodes_by_id.get(tgt, {}).get("kind", "")
+            tgt_name = nodes_by_id.get(tgt, {}).get("name", tgt)
+            by_type.setdefault(f"--{rel}-->", []).append(f"{tgt_kind}/{tgt_name}")
+        
+        for src, rel, _ in incoming.get(node_id, []):
+            src_kind = nodes_by_id.get(src, {}).get("kind", "")
+            src_name = nodes_by_id.get(src, {}).get("name", src)
+            by_type.setdefault(f"<--{rel}--", []).append(f"{src_kind}/{src_name}")
+    
+    result["relationships_by_type"] = {k: sorted(set(v)) for k, v in by_type.items()}
+    
+    # ========== 3. BACKING INFRASTRUCTURE ==========
+    # Find infrastructure chain: Namespace -> Deployment -> ReplicaSet -> Pod
+    infra_chain: list[str] = []
+    
+    if node_info.get("kind") in ["App", "Service"]:
+        # Find the service alias if we're starting from App
+        service_node = None
+        for alias in aliases:
+            if nodes_by_id.get(alias, {}).get("kind") == "Service":
+                service_node = alias
+                break
+        
+        if service_node:
+            service_name = nodes_by_id.get(service_node, {}).get("name", "")
+            namespace = nodes_by_id.get(service_node, {}).get("namespace", "")
+            
+            # Find Deployment with same name
+            deploy_id = f"Deployment/{service_name}"
+            if deploy_id not in nodes_by_id:
+                # Try namespace-prefixed format
+                deploy_id = f"Deployment/{namespace}/{service_name}"
+            
+            if deploy_id in nodes_by_id:
+                infra_chain.append(f"Namespace/{namespace} --contains--> Deployment/{service_name}")
+                
+                for tgt, rel, _ in outgoing.get(deploy_id, []):
+                    if rel == "contains" and nodes_by_id.get(tgt, {}).get("kind") == "ReplicaSet":
+                        rs_name = nodes_by_id.get(tgt, {}).get("name", tgt)
+                        infra_chain.append(f"Deployment/{service_name} --contains--> ReplicaSet/{rs_name}")
+                        
+                        for pod_tgt, pod_rel, _ in outgoing.get(tgt, []):
+                            if pod_rel == "contains" and nodes_by_id.get(pod_tgt, {}).get("kind") == "Pod":
+                                pod_name = nodes_by_id.get(pod_tgt, {}).get("name", pod_tgt)
+                                infra_chain.append(f"ReplicaSet/{rs_name} --contains--> Pod/{pod_name}")
+    
+    if infra_chain:
+        result["backing_infrastructure"] = infra_chain
+    
+    # ========== 4. CALL GRAPH: CALLERS / CALLEES ==========
+    # Build unified call graph using normalized names
+    call_graph: dict[str, set[str]] = {}
+    reverse_call: dict[str, set[str]] = {}
+    
+    for src, targets in outgoing.items():
+        for tgt, rel, _ in targets:
+            if rel == "calls":
+                norm_src = normalize(src)
+                norm_tgt = normalize(tgt)
+                call_graph.setdefault(norm_src, set()).add(norm_tgt)
+                reverse_call.setdefault(norm_tgt, set()).add(norm_src)
+    
+    # Also track "infra" dependencies (depends_on from pods to services)
+    infra_callers: dict[str, set[str]] = {}  # service -> app names that depend on it
+    for src, targets in outgoing.items():
+        src_kind = nodes_by_id.get(src, {}).get("kind")
+        if src_kind == "Pod":
+            # Extract deployment name from pod
+            pod_name = nodes_by_id.get(src, {}).get("name", "")
+            parts = pod_name.rsplit("-", 2)
+            deployment_name = parts[0] if len(parts) >= 3 else pod_name
+            
+            for tgt, rel, _ in targets:
+                if rel == "depends_on":
+                    # Normalize the target service
+                    norm_tgt = normalize(tgt)
+                    tgt_name = get_name(norm_tgt)
+                    infra_callers.setdefault(tgt_name, set()).add(deployment_name)
+    
+    norm_aliases = {normalize(a) for a in aliases}
+    entity_name = get_name(start_node)
+    
+    # Direct callers (via "calls" edge)
+    direct_callers: set[str] = set()
+    for norm_alias in norm_aliases:
+        for caller in reverse_call.get(norm_alias, set()):
+            direct_callers.add(get_name(caller))
+    
+    # Direct callees (via "calls" edge)
+    direct_callees: set[str] = set()
+    for norm_alias in norm_aliases:
+        for callee in call_graph.get(norm_alias, set()):
+            direct_callees.add(get_name(callee))
+    
+    # Infrastructure callers (via "depends_on" edge from pods)
+    infra_caller_names: set[str] = set()
+    for alias in aliases:
+        alias_name = get_name(alias)
+        if alias_name in infra_callers:
+            infra_caller_names.update(infra_callers[alias_name])
+    
+    # Combine all callers (both via "calls" and "depends_on")
+    all_callers = direct_callers | infra_caller_names
+    
+    result["callers"] = sorted(all_callers)
+    result["callees"] = sorted(direct_callees)
+    
+    # ========== 5. CALL CHAINS ==========
+    # Find root services (entry points - no callers in call graph)
+    all_in_graph = set(call_graph.keys()) | set(reverse_call.keys())
+    root_services = [s for s in all_in_graph if s not in reverse_call or len(reverse_call[s]) == 0]
+    leaf_services = [s for s in all_in_graph if s not in call_graph or len(call_graph[s]) == 0]
+    
+    # Call chains TO this entity (from roots)
+    def find_call_chains_to(targets: set[str], max_depth: int = 10) -> list[str]:
+        paths: list[str] = []
+        
+        def dfs(current: str, path: list[str], visited: set):
+            if len(path) > max_depth:
+                return
+            if current in targets:
+                paths.append(" -> ".join(path))
+                return
+            for callee in call_graph.get(current, set()):
+                if callee not in visited:
+                    visited.add(callee)
+                    path.append(get_name(callee))
+                    dfs(callee, path, visited)
+                    path.pop()
+                    visited.discard(callee)
+        
+        for root in root_services:
+            if root in targets:
+                paths.append(get_name(root))
+            else:
+                dfs(root, [get_name(root)], {root})
+        
+        return paths
+    
+    # Call chains FROM this entity (to leaves)
+    def find_call_chains_from(sources: set[str], max_depth: int = 10) -> list[str]:
+        paths: list[str] = []
+        
+        def dfs(current: str, path: list[str], visited: set):
+            if len(path) > max_depth:
+                return
+            callees = call_graph.get(current, set())
+            if not callees or current in leaf_services:
+                if len(path) > 1:
+                    paths.append(" -> ".join(path))
+                return
+            for callee in callees:
+                if callee not in visited:
+                    visited.add(callee)
+                    path.append(get_name(callee))
+                    dfs(callee, path, visited)
+                    path.pop()
+                    visited.discard(callee)
+        
+        for source in sources:
+            dfs(source, [get_name(source)], {source})
+        
+        return paths
+    
+    # Build chains using normalized aliases
+    chains_to = find_call_chains_to(norm_aliases)
+    chains_from = find_call_chains_from(norm_aliases)
+    
+    # For infra services (not in call graph), also show depends_on paths
+    if not chains_to and infra_caller_names:
+        # Build "infra" chains: caller -> entity (infra)
+        chains_to = [f"{caller} -> {entity_name} (infra)" for caller in sorted(infra_caller_names)]
+    
+    result["call_chains_to_root"] = sorted(set(chains_to[:20]))
+    result["call_chains_to_leaf"] = sorted(set(chains_from[:20]))
+    
+    # ========== 6. INFRASTRUCTURE DEPENDENCIES ==========
+    # Pods and deployments that depend on this service (via depends_on edges)
+    dependent_pods: set[str] = set()
+    for alias in aliases:
+        for src, rel, _ in incoming.get(alias, []):
+            if rel == "depends_on" and nodes_by_id.get(src, {}).get("kind") == "Pod":
+                dependent_pods.add(nodes_by_id.get(src, {}).get("name", src))
+    
+    if dependent_pods:
+        deployments: set[str] = set()
+        for pod_name in dependent_pods:
+            parts = pod_name.rsplit("-", 2)
+            if len(parts) >= 3:
+                deployments.add(parts[0])
+        
+        result["used_by_infra"] = {
+            "pods": sorted(dependent_pods),
+            "deployments": sorted(deployments),
+        }
+    
+    return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+
+# =============================================================================
+# Helper Functions for Metrics/Events (kept separate)
+# =============================================================================
+
+def _extract_deployment_from_pod(pod_name: str) -> str:
+    """Extract deployment name from pod name.
+    
+    Kubernetes pod naming convention: <deployment>-<replicaset-hash>-<pod-hash>
+    e.g., frontend-675fd7b5c5-gd8gl -> frontend
+          checkout-8546fdc74d-7m4dn -> checkout
+    """
+    if not pod_name:
+        return "unknown"
+    parts = pod_name.rsplit("-", 2)
+    if len(parts) >= 3:
+        return parts[0]
+    elif len(parts) == 2:
+        return parts[0]
+    return pod_name
+
+
+def _sanitize_metric_name(name: str) -> str:
+    """Sanitize metric name to be valid Python/Pandas identifier.
+    
+    Replaces special characters with underscores so metric names can be used
+    in eval expressions.
+    
+    e.g., cluster:namespace:pod_memory:active:kube_pod_container_resource_limits
+          -> cluster_namespace_pod_memory_active_kube_pod_container_resource_limits
+    """
+    import re
+    # Replace colons, dots, dashes, and other special chars with underscores
+    sanitized = re.sub(r'[:\-\./\s]', '_', name)
+    # Remove consecutive underscores
+    sanitized = re.sub(r'_+', '_', sanitized)
+    # Remove leading/trailing underscores
+    sanitized = sanitized.strip('_')
+    return sanitized
+
+
+def _sanitize_eval_query(eval_query: str, name_mapping: dict[str, str]) -> str:
+    """Transform eval query to use sanitized metric names.
+    
+    If the user wrote an eval using original metric names (with colons),
+    automatically transform it to use sanitized names.
+    """
+    result = eval_query
+    # Sort by length descending to replace longer names first (avoid partial matches)
+    for original, sanitized in sorted(name_mapping.items(), key=lambda x: -len(x[0])):
+        if original != sanitized:
+            result = result.replace(original, sanitized)
+    return result
+
+
+def _extract_object_info_from_filename(filename: str) -> dict[str, str]:
+    """Extract object kind and name from metric filename.
+    
+    Filename format: <kind>_<name>.tsv
+    e.g., pod_checkout-8546fdc74d-7m4dn.tsv -> {"kind": "pod", "name": "checkout-8546fdc74d-7m4dn"}
+    """
+    stem = filename.replace(".tsv", "")
+    parts = stem.split("_", 1)
+    if len(parts) == 2:
+        return {"kind": parts[0], "name": parts[1]}
+    return {"kind": "unknown", "name": stem}
+
+
+async def _metric_analysis(args: dict[str, Any]) -> list[TextContent]:
+    if pd is None:
+        return [TextContent(type="text", text="Error: pandas is required for this tool")]
+
+    base_dir = args.get("base_dir", "")
+    k8_object_name = args.get("k8_object_name")  # Now optional
+    object_pattern = args.get("object_pattern", "*")  # Default: all objects
+    metric_names = args.get("metric_names", [])
+    eval_query = args.get("eval")
+    filters = args.get("filters", {})
+    group_by = args.get("group_by")
+    agg_func = args.get("agg", "mean")
+    start_time_str = args.get("start_time")
+    end_time_str = args.get("end_time")
+    
+    start_time = _parse_time(start_time_str) if start_time_str else None
+    end_time = _parse_time(end_time_str) if end_time_str else None
+    
+    base_path = Path(base_dir)
+    if not base_path.exists():
+        return [TextContent(type="text", text=f"Metrics directory not found: {base_dir}")]
+    
+    # Determine which files to load
+    if k8_object_name:
+        # Specific object requested
+        try:
+            kind, name = k8_object_name.split("/", 1)
+            prefix = f"{kind.lower()}_{name}"
+            files = list(base_path.glob(f"{prefix}*.tsv"))
+        except ValueError:
+            return [TextContent(type="text", text="Invalid k8_object_name format. Use '<kind>/<name>'")]
+    else:
+        # Batch mode: use object_pattern
+        # Convert "pod/*" to "pod_*.tsv", "pod/frontend*" to "pod_frontend*.tsv"
+        if "/" in object_pattern:
+            kind, name_pattern = object_pattern.split("/", 1)
+            glob_pattern = f"{kind.lower()}_{name_pattern}.tsv"
+        else:
+            glob_pattern = f"{object_pattern}.tsv" if object_pattern != "*" else "*.tsv"
+        
+        files = list(base_path.glob(glob_pattern))
+    
+    if not files:
+        return [TextContent(type="text", text=f"No metric files found matching pattern")]
+    
+    all_data = []
+    
+    for file_path in files:
+        try:
+            df = pd.read_csv(file_path, sep='\t')
+            
+            # Extract object info from filename and add as columns
+            obj_info = _extract_object_info_from_filename(file_path.name)
+            df['_source_file'] = file_path.name
+            df['_object_kind'] = obj_info['kind']
+            df['_object_name'] = obj_info['name']
+            
+            # Extract deployment from pod name
+            if obj_info['kind'] == 'pod':
+                df['deployment'] = _extract_deployment_from_pod(obj_info['name'])
+            else:
+                df['deployment'] = obj_info['name']
+            
+            # Filter by metric names if provided
+            if metric_names:
+                if 'metric_name' in df.columns:
+                    df = df[df['metric_name'].isin(metric_names)]
+            
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            # Time filter
+            if start_time:
+                df = df[df['timestamp'] >= pd.Timestamp(start_time).tz_localize(None)]
+            if end_time:
+                df = df[df['timestamp'] <= pd.Timestamp(end_time).tz_localize(None)]
+            
+            # Custom filters
+            if filters:
+                for col, val in filters.items():
+                    if col in df.columns:
+                        df = df[df[col] == val]
+            
+            if not df.empty:
+                all_data.append(df)
+                
+        except Exception:
+            continue
+            
+    if not all_data:
+        return [TextContent(type="text", text="[]")]
+        
+    combined_df = pd.concat(all_data, ignore_index=True)
+    
+    # If eval is requested, we need to pivot so metrics are columns
+    if eval_query:
+        if 'metric_name' not in combined_df.columns or 'value' not in combined_df.columns:
+             return [TextContent(type="text", text="Error: Cannot perform eval - missing metric_name or value columns")]
+        
+        # Build mapping of original metric names to sanitized names
+        unique_metrics = combined_df['metric_name'].unique()
+        name_mapping = {m: _sanitize_metric_name(m) for m in unique_metrics}
+        sanitized_eval = _sanitize_eval_query(eval_query, name_mapping)
+        
+        # Detect mode based on group_by: per-object or cluster-wide
+        per_object_mode = group_by in ('deployment', 'pod_name', '_object_name')
+        
+        try:
+            if per_object_mode:
+                # PER-OBJECT MODE: Compute derived metric at each timestamp FIRST, then aggregate
+                # This ensures ratios like throttle_pct are computed correctly before aggregation
+                pivot_dfs = []
+                
+                for obj_name, obj_df in combined_df.groupby('_object_name'):
+                    # Pivot with timestamp index - keep all data points
+                    pivot_df = obj_df.pivot_table(
+                        index='timestamp',
+                        columns='metric_name', 
+                        values='value', 
+                        aggfunc='mean'  # For duplicate timestamps, use mean
+                    )
+                    
+                    # Forward-fill to handle misaligned timestamps
+                    pivot_df = pivot_df.ffill().bfill()
+                    pivot_df.columns = [_sanitize_metric_name(c) for c in pivot_df.columns]
+                    
+                    # Compute derived metric (e.g., throttle_pct) at each timestamp
+                    pivot_df.eval(sanitized_eval, inplace=True)
+                    
+                    # Add object metadata
+                    pivot_df = pivot_df.reset_index()
+                    pivot_df['_object_name'] = obj_name
+                    pivot_df['deployment'] = obj_df['deployment'].iloc[0] if 'deployment' in obj_df.columns else obj_name
+                    pivot_df['pod_name'] = obj_name
+                    pivot_dfs.append(pivot_df)
+                
+                combined_df = pd.concat(pivot_dfs, ignore_index=True)
+            else:
+                # CLUSTER-WIDE MODE: Sum across all objects at each timestamp, then compute derived metric
+                pivot_df = combined_df.pivot_table(
+                    index='timestamp',
+                    columns='metric_name', 
+                    values='value', 
+                    aggfunc='sum'
+                )
+                
+                # Forward-fill to handle misaligned timestamps
+                pivot_df = pivot_df.ffill().bfill()
+                pivot_df.columns = [_sanitize_metric_name(c) for c in pivot_df.columns]
+                
+                # Compute derived metric
+                pivot_df.eval(sanitized_eval, inplace=True)
+                
+                if "=" not in sanitized_eval:
+                    result = pivot_df.eval(sanitized_eval)
+                    if isinstance(result, pd.Series):
+                        pivot_df['result'] = result
+                
+                combined_df = pivot_df.reset_index()
+            
+        except Exception as e:
+            sanitized_names = list(name_mapping.values())
+            return [TextContent(type="text", text=f"Error in eval: {e}\n"
+                                                  f"Available columns (sanitized): {sanitized_names}")]
+
+    # Group By and Aggregation
+    if group_by:
+        # Handle special 'deployment' extraction from pod names
+        if group_by == 'deployment' and 'deployment' not in combined_df.columns:
+            if 'pod_name' in combined_df.columns:
+                combined_df['deployment'] = combined_df['pod_name'].apply(_extract_deployment_from_pod)
+            elif '_object_name' in combined_df.columns:
+                combined_df['deployment'] = combined_df['_object_name'].apply(_extract_deployment_from_pod)
+        
+        if group_by in combined_df.columns:
+            numeric_cols = combined_df.select_dtypes(include=[np.number]).columns.tolist()
+            numeric_cols = [c for c in numeric_cols if not c.startswith('_')]
+            
+            if numeric_cols:
+                grouped = combined_df.groupby(group_by)[numeric_cols].agg(agg_func).reset_index()
+                # Sort by eval result column if present
+                if len(numeric_cols) > 0:
+                    eval_col = None
+                    if eval_query and "=" in eval_query:
+                        eval_col = eval_query.split("=")[0].strip()
+                    sort_col = eval_col if eval_col and eval_col in grouped.columns else numeric_cols[-1]
+                    grouped = grouped.sort_values(sort_col, ascending=False)
+                
+                return [TextContent(type="text", text=grouped.to_json(orient='records', indent=2))]
+            else:
+                return [TextContent(type="text", text=f"Error: No numeric columns found for aggregation")]
+        else:
+            return [TextContent(type="text", text=f"Error: Column '{group_by}' not found. Available: {list(combined_df.columns)}")]
+    
+    # If no group_by but agg is specified, aggregate all rows
+    if agg_func and agg_func != 'mean':  # 'mean' is default, so explicit agg requested
+        numeric_cols = combined_df.select_dtypes(include=[np.number]).columns.tolist()
+        numeric_cols = [c for c in numeric_cols if not c.startswith('_')]
+        if numeric_cols:
+            result = combined_df[numeric_cols].agg(agg_func).to_frame().T
+            return [TextContent(type="text", text=result.to_json(orient='records', indent=2))]
+             
+    # Return data
+    # If we pivoted, we have wide format. If not, long format.
+    if 'timestamp' in combined_df.columns:
+        combined_df = combined_df.sort_values('timestamp')
+        combined_df['timestamp'] = combined_df['timestamp'].astype(str)
+    
+    # Drop internal columns for cleaner output
+    output_df = combined_df.drop(columns=[c for c in combined_df.columns if c.startswith('_')], errors='ignore')
+        
+    return [TextContent(type="text", text=output_df.to_json(orient='records', indent=2))]
+
+
+async def _get_metric_anomalies(args: dict[str, Any]) -> list[TextContent]:
+    if pd is None:
+        return [TextContent(type="text", text="Error: pandas is required for this tool")]
+
+    k8_object_name = args.get("k8_object_name", "")
+    base_dir = args.get("base_dir", "")
+    metric_name_filter = args.get("metric_name_filter")
+    start_time_str = args.get("start_time")
+    end_time_str = args.get("end_time")
+    raw_content = args.get("raw_content", True)
+    
+    start_time = _parse_time(start_time_str) if start_time_str else None
+    end_time = _parse_time(end_time_str) if end_time_str else None
+    
+    base_path = Path(base_dir)
+    if not base_path.exists():
+        return [TextContent(type="text", text=f"Metrics directory not found: {base_dir}")]
+    
+    # Parse kind and name
+    try:
+        kind, name = k8_object_name.split("/", 1)
+    except ValueError:
+        return [TextContent(type="text", text="Invalid k8_object_name format. Use '<kind>/<name>'")]
+    
+    # Find relevant files
+    prefix = f"{kind.lower()}_{name}"
+    files = list(base_path.glob(f"{prefix}*.tsv"))
+    
+    if not files:
+        return [TextContent(type="text", text=f"No metric files found for {k8_object_name}")]
+    
+    results = {
+        "object": k8_object_name,
+        "metrics": []
+    }
+    
+    for file_path in files:
+        try:
+            # Read TSV with pandas
+            df = pd.read_csv(file_path, sep='\t')
+            
+            # Apply metric name filter
+            if metric_name_filter:
+                if 'metric_name' in df.columns:
+                    df = df[df['metric_name'].str.contains(metric_name_filter, na=False)]
+                
+                if df.empty:
+                    continue
+
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            # Filter by time
+            if start_time:
+                df = df[df['timestamp'] >= pd.Timestamp(start_time).tz_localize(None)]
+            if end_time:
+                df = df[df['timestamp'] <= pd.Timestamp(end_time).tz_localize(None)]
+            
+            if df.empty:
+                continue
+
+            # Calculate stats and anomalies
+            # Using simple Z-score on 'value' column
+            if 'value' in df.columns:
+                mean = df['value'].mean()
+                std = df['value'].std()
+                
+                # If std is 0, no anomalies possible unless we define deviation from mean 0
+                anomalies = []
+                if std > 0:
+                    threshold = mean + 2 * std
+                    anomaly_df = df[df['value'] > threshold]
+                    anomalies = anomaly_df.to_dict(orient='records')
+            else:
+                anomalies = []
+            
+            # Convert timestamp back to string for JSON serialization
+            if 'timestamp' in df.columns:
+                df['timestamp'] = df['timestamp'].astype(str)
+                # Convert anomaly timestamps too
+                for a in anomalies:
+                    if 'timestamp' in a:
+                        a['timestamp'] = str(a['timestamp'])
+
+            metric_data = {
+                "metric_name": df['metric_name'].iloc[0] if 'metric_name' in df.columns else "unknown",
+                "file": file_path.name,
+                "count": len(df),
+                "anomaly_count": len(anomalies),
+                "anomalies": anomalies,
+            }
+            
+            if raw_content:
+                metric_data["data"] = df.to_dict(orient='records')
+                
+            results["metrics"].append(metric_data)
+            
+        except Exception as e:
+            results["metrics"].append({"file": file_path.name, "error": str(e)})
+            
+    return [TextContent(type="text", text=json.dumps(results, indent=2))]
+
+
+async def _event_analysis(args: dict[str, Any]) -> list[TextContent]:
+    """Analyze Kubernetes events with SQL-like filter → group_by → agg flow."""
+    if pd is None:
+        return [TextContent(type="text", text="Error: pandas is required for this tool")]
+
+    events_file = args.get("events_file", "")
+    filters = args.get("filters", {})
+    group_by = args.get("group_by")
+    agg_type = args.get("agg", "count")
+    sort_by = args.get("sort_by")
+    limit = args.get("limit")
+    start_time_str = args.get("start_time")
+    end_time_str = args.get("end_time")
+    
+    start_time = _parse_time(start_time_str) if start_time_str else None
+    end_time = _parse_time(end_time_str) if end_time_str else None
+    
+    if not Path(events_file).exists():
+        return [TextContent(type="text", text=f"Events file not found: {events_file}")]
+    
+    try:
+        df = pd.read_csv(events_file, sep='\t')
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error reading events file: {e}")]
+    
+    # Add deployment column (extracted from pod names in object_name)
+    if 'object_name' in df.columns and 'object_kind' in df.columns:
+        def extract_deployment(row):
+            if row.get('object_kind') == 'Pod':
+                return _extract_deployment_from_pod(str(row.get('object_name', '')))
+            return row.get('object_name', 'unknown')
+        df['deployment'] = df.apply(extract_deployment, axis=1)
+    
+    # Apply filters
+    if filters:
+        for col, val in filters.items():
+            if col in df.columns:
+                df = df[df[col] == val]
+            else:
+                return [TextContent(type="text", text=f"Error: Filter column '{col}' not found. Available: {list(df.columns)}")]
+    
+    # Filter by time
+    time_col = 'event_time' if 'event_time' in df.columns else 'timestamp'
+    if time_col in df.columns:
+        df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
+        if start_time:
+            df = df[df[time_col] >= pd.Timestamp(start_time).tz_localize(None)]
+        if end_time:
+            df = df[df[time_col] <= pd.Timestamp(end_time).tz_localize(None)]
+    
+    # Group By with multiple aggregation types
+    if group_by:
+        # Normalize group_by to list
+        group_cols = [group_by] if isinstance(group_by, str) else list(group_by)
+        
+        # Check all group columns exist
+        for col in group_cols:
+            if col not in df.columns:
+                return [TextContent(type="text", text=f"Error: Group column '{col}' not found. Available: {list(df.columns)}")]
+        
+        # Perform aggregation based on type
+        if agg_type == 'count':
+            grouped = df.groupby(group_cols).size().reset_index(name='count')
+            sort_col = sort_by if sort_by and sort_by in grouped.columns else 'count'
+            grouped = grouped.sort_values(sort_col, ascending=False)
+            
+        elif agg_type == 'first':
+            grouped = df.sort_values(time_col).groupby(group_cols).first().reset_index()
+            
+        elif agg_type == 'last':
+            grouped = df.sort_values(time_col).groupby(group_cols).last().reset_index()
+            
+        elif agg_type == 'nunique':
+            # Count unique values in each non-group column
+            agg_dict = {col: 'nunique' for col in df.columns if col not in group_cols}
+            grouped = df.groupby(group_cols).agg(agg_dict).reset_index()
+            # Rename columns to indicate they are counts
+            grouped.columns = [f"{col}_unique" if col not in group_cols else col for col in grouped.columns]
+            
+        elif agg_type == 'list':
+            # List unique values (useful for seeing all reasons for a pod)
+            agg_dict = {col: lambda x: list(x.unique())[:10] for col in ['reason', 'message', 'event_kind'] if col in df.columns}
+            if agg_dict:
+                grouped = df.groupby(group_cols).agg(agg_dict).reset_index()
+            else:
+                grouped = df.groupby(group_cols).size().reset_index(name='count')
+        else:
+            return [TextContent(type="text", text=f"Error: Unknown aggregation type '{agg_type}'. Use: count, first, last, nunique, list")]
+        
+        # Apply limit
+        if limit:
+            grouped = grouped.head(limit)
+        
+        # Convert timestamps to string for JSON
+        for col in grouped.columns:
+            if pd.api.types.is_datetime64_any_dtype(grouped[col]):
+                grouped[col] = grouped[col].astype(str)
+        
+        return [TextContent(type="text", text=grouped.to_json(orient='records', indent=2))]
+    
+    # No group_by - return filtered data
+    if sort_by and sort_by in df.columns:
+        df = df.sort_values(sort_by)
+    elif time_col in df.columns:
+        df = df.sort_values(time_col)
+    
+    # Apply limit
+    if limit:
+        df = df.head(limit)
+    
+    # Convert timestamps to string for JSON
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            df[col] = df[col].astype(str)
+    
+    return [TextContent(type="text", text=df.to_json(orient='records', indent=2))]
+
+
+async def _get_trace_error_tree(args: dict[str, Any]) -> list[TextContent]:
+    trace_file = args.get("trace_file", "")
+    service_name = args.get("service_name")
+    pivot_time_str = args.get("pivot_time")
+    delta_time_str = args.get("delta_time", "5m")
+    
+    try:
+        traces = read_tsv_file(trace_file)
+    except FileNotFoundError:
+        return [TextContent(type="text", text=f"Trace file not found: {trace_file}")]
+        
+    delta = _parse_duration(delta_time_str)
+    pivot_time = _parse_time(pivot_time_str) if pivot_time_str else None
+    
+    # Filter by time windows first
+    pre_window_traces = []
+    post_window_traces = []
+    
+    if pivot_time:
+        start_pre = pivot_time - delta
+        end_post = pivot_time + delta
+        pre_window_traces = _filter_by_time(traces, "timestamp", start_pre, pivot_time)
+        post_window_traces = _filter_by_time(traces, "timestamp", pivot_time, end_post)
+    else:
+        post_window_traces = traces
+
+    def build_tree_stats(window_traces: List[Dict[str, Any]]) -> Dict[str, Any]:
+        if not window_traces:
+            return None
+
+        # 1. Index spans by trace_id and span_id
+        spans_by_trace: Dict[str, List[Dict[str, Any]]] = {}
+        for span in window_traces:
+            tid = span.get("trace_id")
+            if tid:
+                spans_by_trace.setdefault(tid, []).append(span)
+
+        # 2. Build aggregation tree
+        # Path signature -> Stats
+        path_stats: Dict[str, Dict[str, Any]] = {}
+
+        for tid, spans in spans_by_trace.items():
+            # Build parent map for this trace
+            span_map = {s["span_id"]: s for s in spans if s.get("span_id")}
+            children_map: Dict[str, List[str]] = {}
+            roots = []
+            
+            for s in spans:
+                sid = s.get("span_id")
+                pid = s.get("parent_span_id")
+                if pid and pid in span_map:
+                    children_map.setdefault(pid, []).append(sid)
+                else:
+                    roots.append(sid)
+
+            # Recursive traversal to build paths
+            def traverse(span_id: str, current_path: List[str]):
+                span = span_map.get(span_id)
+                if not span: return
+                
+                svc = span.get("service_name", "unknown")
+                name = span.get("span_name", "unknown")
+                node_key = f"{svc}: {name}"
+                
+                # Extend path
+                new_path = current_path + [node_key]
+                path_sig = " -> ".join(new_path)
+                
+                # Aggregate stats for this specific path in the tree
+                if path_sig not in path_stats:
+                    path_stats[path_sig] = {
+                        "path": new_path,
+                        "count": 0,
+                        "errors": 0,
+                        "latencies": [],
+                        "error_messages": set(),
+                        "infra_context": set()
+                    }
+                
+                stats = path_stats[path_sig]
+                stats["count"] += 1
+                
+                status = span.get("status_code", "Unset")
+                if status == "Error":
+                    stats["errors"] += 1
+                    msg = span.get("status_message")
+                    if msg: stats["error_messages"].add(msg[:200]) # Truncate long messages
+
+                try:
+                    dur = float(span.get("duration_ms", 0))
+                    stats["latencies"].append(dur)
+                except: pass
+                
+                # Capture infra context (attributes often in other columns or message)
+                # Naive: capture unique reason/message if present and distinct from status_message
+                # In provided TSV, we see columns: timestamp, trace_id, span_id, parent_span_id, trace_state, span_name, span_kind, service_name, scope_name, scope_version, duration, status_code, status_message, duration_ms
+                # It doesn't look like we have explicit 'node_name' or 'pod_name' columns in the TSV provided earlier.
+                # But we can capture 'status_message' as context.
+                
+                # Recurse
+                for child_id in children_map.get(span_id, []):
+                    traverse(child_id, new_path)
+
+            for root_id in roots:
+                traverse(root_id, [])
+
+        # 3. Format output tree
+        # Convert flat path stats back to a nested tree structure for readability
+        # OR just return list of paths sorted by error rate/count
+        
+        # Let's return a list of significant paths, but organized.
+        # Actually, a tree structure is better for the UI/LLM to understand the flow.
+        
+        tree_root = {"name": "root", "children": []}
+        
+        # We need to merge paths. 
+        # path_stats keys are "A", "A -> B", "A -> B -> C"
+        # We can reconstruct the tree from these signatures.
+        
+        nodes_by_sig = {}
+        
+        for sig, stats in path_stats.items():
+            path_parts = stats["path"]
+            node_name = path_parts[-1]
+            parent_sig = " -> ".join(path_parts[:-1]) if len(path_parts) > 1 else "root"
+            
+            error_rate = (stats["errors"] / stats["count"] * 100) if stats["count"] > 0 else 0
+            avg_lat = statistics.mean(stats["latencies"]) if stats["latencies"] else 0
+            
+            node_data = {
+                "name": node_name,
+                "stats": {
+                    "count": stats["count"],
+                    "error_rate": f"{error_rate:.1f}%",
+                    "avg_latency_ms": f"{avg_lat:.1f}",
+                },
+                "context": {
+                    "errors": list(stats["error_messages"])[:5] # Sample errors
+                },
+                "children": []
+            }
+            nodes_by_sig[sig] = node_data
+            
+            if parent_sig == "root":
+                tree_root["children"].append(node_data)
+            elif parent_sig in nodes_by_sig:
+                nodes_by_sig[parent_sig]["children"].append(node_data)
+        
+        # Filter: If filter_service is provided, we might want to prune the tree
+        # But the args say "branches containing service".
+        # If we built the full tree, we can just return it. The LLM can navigate it.
+        # However, for huge trees, this might be big.
+        # Let's return the top-level roots.
+        
+        return tree_root["children"]
+
+    result = {
+        "pre_pivot_tree": build_tree_stats(pre_window_traces),
+        "post_pivot_tree": build_tree_stats(post_window_traces)
+    }
+    
+    return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+
+def _resolve_alert_column(col: str, available_cols: list) -> str:
+    """Resolve column shortcuts for alerts.
+    
+    Maps user-friendly names to actual flattened column names:
+    - alertname → labels.alertname
+    - severity → labels.severity
+    - service_name → labels.service_name
+    - namespace → labels.namespace
+    """
+    shortcuts = {
+        'alertname': 'labels.alertname',
+        'severity': 'labels.severity',
+        'service_name': 'labels.service_name',
+        'service': 'labels.service_name',
+        'namespace': 'labels.namespace',
+    }
+    
+    # Check if it's a shortcut
+    if col in shortcuts:
+        resolved = shortcuts[col]
+        if resolved in available_cols:
+            return resolved
+    
+    # Return as-is if it exists
+    if col in available_cols:
+        return col
+    
+    # Try with labels. prefix
+    if f'labels.{col}' in available_cols:
+        return f'labels.{col}'
+    
+    return col  # Return original, will fail later if invalid
+
+
+async def _alert_analysis(args: dict[str, Any]) -> list[TextContent]:
+    """Analyze alerts with SQL-like filter → group_by → agg flow."""
+    if pd is None:
+        return [TextContent(type="text", text="Error: pandas is required for this tool")]
+
+    base_dir = args.get("base_dir", "")
+    filters = args.get("filters", {})
+    group_by = args.get("group_by")
+    agg_type = args.get("agg", "count")
+    sort_by = args.get("sort_by")
+    limit = args.get("limit")
+    start_time_str = args.get("start_time")
+    end_time_str = args.get("end_time")
+    
+    start_time = _parse_time(start_time_str) if start_time_str else None
+    end_time = _parse_time(end_time_str) if end_time_str else None
+    
+    base_path = Path(base_dir)
+    if not base_path.exists():
+        return [TextContent(type="text", text=f"Alerts directory not found: {base_dir}")]
+    
+    # Load all alerts from JSON files
+    all_alerts = []
+    file_timestamps = []  # Track when each file was captured
+    
+    for json_file in base_path.glob("*.json"):
+        try:
+            data = read_json_file(json_file)
+            
+            # Extract file timestamp from filename or data
+            file_ts = None
+            if 'timestamp' in data:
+                file_ts = data['timestamp']
+            
+            # Handle nested structure: data.alerts or just alerts array
+            if isinstance(data, dict):
+                if 'data' in data and 'alerts' in data['data']:
+                    alerts_list = data['data']['alerts']
+                elif 'alerts' in data:
+                    alerts_list = data['alerts']
+                else:
+                    alerts_list = [data]
+            else:
+                alerts_list = data if isinstance(data, list) else [data]
+            
+            # Add file timestamp to each alert for duration calculation
+            for alert in alerts_list:
+                alert['_file_timestamp'] = file_ts or datetime.now().isoformat()
+            
+            all_alerts.extend(alerts_list)
+        except Exception:
+            continue
+            
+    if not all_alerts:
+        return [TextContent(type="text", text="[]")]
+
+    # Normalize JSON to DataFrame (flattens nested labels/annotations)
+    df = pd.json_normalize(all_alerts)
+    
+    # Compute duration_active (how long alert has been firing)
+    time_col = 'activeAt' if 'activeAt' in df.columns else 'startsAt'
+    if time_col in df.columns and '_file_timestamp' in df.columns:
+        df[time_col] = pd.to_datetime(df[time_col], errors='coerce', utc=True)
+        df['_file_timestamp'] = pd.to_datetime(df['_file_timestamp'], errors='coerce', utc=True)
+        
+        # Remove timezone info for consistent comparison
+        df[time_col] = df[time_col].dt.tz_localize(None)
+        df['_file_timestamp'] = df['_file_timestamp'].dt.tz_localize(None)
+        
+        # Duration in minutes
+        df['duration_active_min'] = (df['_file_timestamp'] - df[time_col]).dt.total_seconds() / 60
+        df['duration_active_min'] = df['duration_active_min'].round(1)
+        
+        # Human-readable duration
+        def format_duration(minutes):
+            if pd.isna(minutes):
+                return 'unknown'
+            if minutes < 1:
+                return '<1m'
+            elif minutes < 60:
+                return f'{int(minutes)}m'
+            elif minutes < 1440:
+                return f'{int(minutes // 60)}h {int(minutes % 60)}m'
+            else:
+                return f'{int(minutes // 1440)}d {int((minutes % 1440) // 60)}h'
+        
+        df['duration_active'] = df['duration_active_min'].apply(format_duration)
+    
+    # Convert value to numeric
+    if 'value' in df.columns:
+        df['value'] = pd.to_numeric(df['value'], errors='coerce')
+    
+    # Apply filters (with shortcut resolution)
+    if filters:
+        for col, val in filters.items():
+            resolved_col = _resolve_alert_column(col, list(df.columns))
+            if resolved_col in df.columns:
+                df = df[df[resolved_col] == val]
+            else:
+                return [TextContent(type="text", text=f"Error: Filter column '{col}' not found. Available: {list(df.columns)}")]
+    
+    # Filter by time
+    if time_col in df.columns:
+        if start_time:
+            df = df[df[time_col] >= pd.Timestamp(start_time).tz_localize(None)]
+        if end_time:
+            df = df[df[time_col] <= pd.Timestamp(end_time).tz_localize(None)]
+    
+    # Group By with multiple aggregation types
+    if group_by:
+        # Normalize group_by to list and resolve shortcuts
+        group_cols_input = [group_by] if isinstance(group_by, str) else list(group_by)
+        group_cols = [_resolve_alert_column(c, list(df.columns)) for c in group_cols_input]
+        
+        # Check all group columns exist
+        for col in group_cols:
+            if col not in df.columns:
+                return [TextContent(type="text", text=f"Error: Group column '{col}' not found. Available: {list(df.columns)}")]
+        
+        # Perform aggregation
+        if agg_type == 'count':
+            grouped = df.groupby(group_cols).size().reset_index(name='count')
+            sort_col = sort_by if sort_by and sort_by in grouped.columns else 'count'
+            grouped = grouped.sort_values(sort_col, ascending=False)
+            
+        elif agg_type == 'first':
+            if time_col in df.columns:
+                grouped = df.sort_values(time_col).groupby(group_cols).first().reset_index()
+            else:
+                grouped = df.groupby(group_cols).first().reset_index()
+            
+        elif agg_type == 'last':
+            if time_col in df.columns:
+                grouped = df.sort_values(time_col).groupby(group_cols).last().reset_index()
+            else:
+                grouped = df.groupby(group_cols).last().reset_index()
+            
+        elif agg_type in ('sum', 'mean', 'max', 'min'):
+            # Numeric aggregations on value and duration columns
+            numeric_cols = ['value', 'duration_active_min']
+            numeric_cols = [c for c in numeric_cols if c in df.columns]
+            
+            if numeric_cols:
+                grouped = df.groupby(group_cols)[numeric_cols].agg(agg_type).reset_index()
+                if sort_by and sort_by in grouped.columns:
+                    grouped = grouped.sort_values(sort_by, ascending=False)
+                elif 'value' in grouped.columns:
+                    grouped = grouped.sort_values('value', ascending=False)
+            else:
+                return [TextContent(type="text", text=f"Error: No numeric columns for {agg_type} aggregation")]
+        else:
+            return [TextContent(type="text", text=f"Error: Unknown aggregation '{agg_type}'. Use: count, first, last, sum, mean, max, min")]
+        
+        # Apply limit
+        if limit:
+            grouped = grouped.head(limit)
+        
+        # Clean up internal columns and convert timestamps
+        grouped = grouped.drop(columns=[c for c in grouped.columns if c.startswith('_')], errors='ignore')
+        for col in grouped.columns:
+            if pd.api.types.is_datetime64_any_dtype(grouped[col]):
+                grouped[col] = grouped[col].astype(str)
+        
+        return [TextContent(type="text", text=grouped.to_json(orient='records', indent=2))]
+    
+    # No group_by - return filtered data
+    if sort_by:
+        resolved_sort = _resolve_alert_column(sort_by, list(df.columns))
+        if resolved_sort in df.columns:
+            ascending = not (sort_by in ['duration_active_min', 'value', 'count'])  # Desc for these
+            df = df.sort_values(resolved_sort, ascending=ascending)
+    elif time_col in df.columns:
+        df = df.sort_values(time_col)
+    
+    # Apply limit
+    if limit:
+        df = df.head(limit)
+    
+    # Clean up and convert timestamps
+    df = df.drop(columns=[c for c in df.columns if c.startswith('_')], errors='ignore')
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            df[col] = df[col].astype(str)
+    
+    return [TextContent(type="text", text=df.to_json(orient='records', indent=2))]
+
+
+# =============================================================================
+# Standalone execution support (for testing without MCP)
+# =============================================================================
+
+def build_topology_standalone(arch_file: str, k8s_objects_file: str, output_file: str) -> dict[str, Any]:
+    """Build topology without MCP server (for direct Python testing).
+    
+    Args:
+        arch_file: Path to application architecture JSON file
+        k8s_objects_file: Path to Kubernetes objects TSV file
+        output_file: Path to write the topology JSON output
+        
+    Returns:
+        Dictionary with 'nodes' and 'edges' lists
+        
+    Raises:
+        FileNotFoundError: If input files don't exist
+        ValueError: If files are invalid
+        
+    Example:
+        >>> from sre_tools.cli.sre_utils.tools import build_topology_standalone
+        >>> topology = build_topology_standalone(
+        ...     arch_file="app/arch.json",
+        ...     k8s_objects_file="k8s_objects_otel-demo_chaos-mesh.tsv",
+        ...     output_file="topology.json"
+        ... )
+        >>> print(f"Built topology with {len(topology['nodes'])} nodes")
+    """
+    arch_path = Path(arch_file)
+    k8s_path = Path(k8s_objects_file)
+    output_path = Path(output_file)
+
+    if not arch_path.exists():
+        raise FileNotFoundError(f"Architecture file not found: {arch_file}")
+    if not k8s_path.exists():
+        raise FileNotFoundError(f"K8s objects file not found: {k8s_objects_file}")
+
+    topology = _do_build_topology(arch_path, k8s_path)
+
+    # Write to output file
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(topology, indent=2))
+
+    return topology
+
+
+# =============================================================================
+# Command-Line Interface
+# =============================================================================
+
+def _cli_build_topology(args) -> int:
+    """CLI handler for build_topology command."""
+    try:
+        topology = build_topology_standalone(
+            arch_file=args.arch_file,
+            k8s_objects_file=args.k8s_objects_file,
+            output_file=args.output_file
+        )
+        print(f"✓ Topology written to {args.output_file}")
+        print(f"  Nodes: {len(topology['nodes'])}")
+        print(f"  Edges: {len(topology['edges'])}")
+        return 0
+    except FileNotFoundError as e:
+        print(f"✗ File not found: {e}")
+        return 1
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        return 1
+
+
+def main():
+    """Command-line interface for SRE utility tools."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        prog="sre_utils",
+        description="SRE utility tools for incident investigation",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Build topology from architecture and K8s objects
+  python -m sre_tools.cli.sre_utils.tools build_topology \\
+    --arch-file app/arch.json \\
+    --k8s-objects-file k8s_objects.tsv \\
+    --output-file topology.json
+
+  # List available tools
+  python -m sre_tools.cli.sre_utils.tools --list
+        """
+    )
+    
+    parser.add_argument(
+        "--list", "-l",
+        action="store_true",
+        help="List available tools"
+    )
+    
+    subparsers = parser.add_subparsers(
+        title="tools",
+        dest="tool",
+        description="Available tools (use '<tool> --help' for tool-specific help)"
+    )
+    
+    # build_topology subcommand
+    build_topo_parser = subparsers.add_parser(
+        "build_topology",
+        help="Build operational topology from application architecture and K8s objects",
+        description="Creates a topology graph with nodes (services, pods, deployments) and edges (relationships)"
+    )
+    build_topo_parser.add_argument(
+        "--arch-file", "-a",
+        required=True,
+        help="Path to application architecture JSON file"
+    )
+    build_topo_parser.add_argument(
+        "--k8s-objects-file", "-k",
+        required=True,
+        help="Path to Kubernetes objects TSV file"
+    )
+    build_topo_parser.add_argument(
+        "--output-file", "-o",
+        required=True,
+        help="Path to write the topology JSON output"
+    )
+    build_topo_parser.set_defaults(func=_cli_build_topology)
+    
+    # Parse args
+    args = parser.parse_args()
+    
+    # Handle --list
+    if args.list:
+        print("Available tools:")
+        print()
+        print("  build_topology      - Build operational topology from architecture and K8s objects")
+        print("  topology_analysis   - Analyze topology (dependencies, service context, infra hierarchy)")
+        print("  metric_analysis     - General metric analysis (filtering, grouping, math)")
+        print("  get_metric_anomalies- Focused anomaly detection")
+        print("  event_analysis      - Analyze K8s events (filter, group, aggregate)")
+        print("  get_trace_error_tree- Trace error analysis")
+        print("  alert_analysis      - Analyze alerts (filter, group, aggregate, duration)")
+        print()
+        print("Use '<tool> --help' for tool-specific options.")
+        return 0
+    
+    # No tool specified
+    if not args.tool:
+        parser.print_help()
+        return 0
+    
+    # Run the tool
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    exit(main())

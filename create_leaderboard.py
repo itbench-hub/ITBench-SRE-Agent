@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Create Leaderboard - Evaluate Agentz on ITBench scenarios.
+Create Leaderboard - Evaluate Zero on ITBench scenarios.
 
-This script runs the agentz agent on all ITBench scenarios, evaluates the results
+This script runs the zero agent on all ITBench scenarios, evaluates the results
 using an LLM-as-judge, and generates a leaderboard result file.
 
 Uses OTEL traces to track execution duration and inference counts.
@@ -396,7 +396,7 @@ def allocate_ports(count: int, start_port: int = 4318) -> List[int]:
     return ports
 
 
-def run_agentz(
+def run_zero(
     scenario_path: Path,
     scenario_name: str,
     run_id: str,
@@ -409,15 +409,17 @@ def run_agentz(
     otel_port: Optional[int] = None,
 ) -> Tuple[Optional[Dict], float, Dict[str, Any]]:
     """
-    Run agentz on a scenario.
+    Run zero on a scenario.
     
     Returns:
         Tuple of (agent_output, duration_seconds, trace_metrics)
     """
     # Build output paths
+    # With new zero CLI, session_dir is the writable workspace
     run_output_dir = output_dir / scenario_name / run_id
     run_output_dir.mkdir(parents=True, exist_ok=True)
-    agent_output_path = run_output_dir / "agent_output.json"
+    # Zero writes output to session_dir/output.json
+    agent_output_path = run_output_dir / "output.json"
     
     # Trace filename: {scenario}_{run}.jsonl
     # Model/version info is already in the traces_dir path
@@ -433,30 +435,22 @@ def run_agentz(
     if collect_traces:
         traces_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Build command
+    # Build command - using new zero CLI with session-dir and read-only-dir
     cmd = [
-        sys.executable, "-m", "agentz",
-        "--scenario-dir", str(scenario_path),
+        sys.executable, "-m", "zero",
+        "--session-dir", str(run_output_dir),  # Writable session directory
+        "--read-only-dir", str(scenario_path),  # Scenario data (read-only)
         "--run-id", run_id,
         "--model", model,
         "--model-provider", model_provider,
-        "--output-dir", str(run_output_dir), # Pass the SPECIFIC run directory
-        # Add output_dir as writable root to allow sandbox to write there
-        "--writable-root", str(run_output_dir.resolve()),
     ]
     
-    # Agentz writes traces to: {output_dir}/traces.jsonl OR {traces_output_dir}/traces.jsonl
-    # We want it in a temp location or directly to our traces folder?
-    # Agentz config now expects --traces-output-dir to be the directory containing traces.jsonl
-    # Let's put raw traces in the run directory first, then copy
-    agentz_traces_dir = run_output_dir
-    agentz_traces_path = agentz_traces_dir / "traces.jsonl"
+    # Zero writes traces to: {session_dir}/traces/traces.jsonl
+    zero_traces_path = run_output_dir / "traces" / "traces.jsonl"
     
     if collect_traces:
         cmd.append("--collect-traces")
         cmd.extend(["--otel-port", str(otel_port)])
-        # Tell agentz to write traces.jsonl in the run directory
-        cmd.extend(["--traces-output-dir", str(agentz_traces_dir)])
     
     if verbose:
         cmd.append("--verbose")
@@ -494,13 +488,13 @@ def run_agentz(
         # Parse traces for metrics and copy to descriptive filename
         trace_metrics = {}
         if collect_traces:
-            # Parse from agentz's output location
-            trace_metrics = parse_traces(agentz_traces_path)
+            # Parse from zero's output location
+            trace_metrics = parse_traces(zero_traces_path)
             
             # Copy raw OTEL traces to descriptive filename
-            if agentz_traces_path.exists():
+            if zero_traces_path.exists():
                 traces_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(agentz_traces_path, traces_path)
+                shutil.copy2(zero_traces_path, traces_path)
                 if verbose:
                     print(f"  📄 Traces saved to: {traces_path}")
         
@@ -666,7 +660,7 @@ def run_single_iteration(
         print(f"    🔄 [{scenario_name}] Starting run {run_num}{port_info}...")
     
     # Run the agent
-    agent_output, duration, trace_metrics = run_agentz(
+    agent_output, duration, trace_metrics = run_zero(
         scenario_path=scenario_path,
         scenario_name=scenario_name,
         run_id=run_id,
@@ -840,7 +834,7 @@ Environment Variables:
         """
     )
     
-    # Agent configuration (matches agentz CLI)
+    # Agent configuration (matches zero CLI)
     parser.add_argument("-m", "--model", required=True,
                         help="Model name for the agent (e.g., aws/claude-opus-4-5)")
     parser.add_argument("--model-provider", required=True,

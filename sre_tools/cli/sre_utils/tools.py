@@ -51,11 +51,11 @@ def register_tools(server: Server) -> None:
                     "properties": {
                         "arch_file": {
                             "type": "string",
-                            "description": "Path to application architecture JSON file (e.g., app/arch.json or app/app.json)"
+                            "description": "Path to application architecture JSON file (e.g., otel_demo_application_architecture.json)"
                         },
                         "k8s_objects_file": {
                             "type": "string",
-                            "description": "Path to Kubernetes objects TSV file (e.g., k8s_objects_otel-demo_chaos-mesh.tsv)"
+                            "description": "Path to Kubernetes objects TSV file (e.g., k8s_objects.tsv)"
                         },
                         "output_file": {
                             "type": "string",
@@ -77,7 +77,7 @@ def register_tools(server: Server) -> None:
                     "properties": {
                         "topology_file": {
                             "type": "string",
-                            "description": "Path to topology JSON file (output from build_topology)"
+                            "description": "Path to topology JSON file (e.g., operational_topology.json, output from build_topology)"
                         },
                         "entity": {
                             "type": "string",
@@ -106,7 +106,7 @@ def register_tools(server: Server) -> None:
                     "properties": {
                         "base_dir": {
                             "type": "string",
-                            "description": "Base directory where metric files are located"
+                            "description": "Path to metrics directory (e.g., metrics/) containing pod_*.tsv and service_*.tsv files"
                         },
                         "k8_object_name": {
                             "type": "string",
@@ -165,7 +165,7 @@ def register_tools(server: Server) -> None:
                         },
                         "base_dir": {
                             "type": "string",
-                            "description": "Base directory where metric files are located"
+                            "description": "Path to metrics directory (e.g., metrics/) containing pod_*.tsv and service_*.tsv files"
                         },
                         "metric_name_filter": {
                             "type": "string",
@@ -203,7 +203,7 @@ def register_tools(server: Server) -> None:
                     "properties": {
                         "events_file": {
                             "type": "string",
-                            "description": "Path to the k8s_events TSV file"
+                            "description": "Path to Kubernetes events TSV file (e.g., k8s_events.tsv)"
                         },
                         "filters": {
                              "type": "object",
@@ -257,7 +257,7 @@ def register_tools(server: Server) -> None:
                     "properties": {
                         "trace_file": {
                             "type": "string",
-                            "description": "Path to the otel_traces TSV file"
+                            "description": "Path to OpenTelemetry traces TSV file (e.g., otel_traces.tsv)"
                         },
                         "service_name": {
                             "type": "string",
@@ -291,7 +291,7 @@ def register_tools(server: Server) -> None:
                     "properties": {
                         "base_dir": {
                             "type": "string",
-                            "description": "Directory containing alert JSON files, OR scenario directory (auto-detects 'alerts/' subdirectory)"
+                            "description": "Path to alerts directory (e.g., alerts/) containing alerts_at_*.json files, OR snapshot directory (auto-detects 'alerts/' subdirectory)"
                         },
                         "filters": {
                              "type": "object",
@@ -343,7 +343,7 @@ def register_tools(server: Server) -> None:
                     "properties": {
                         "base_dir": {
                             "type": "string",
-                            "description": "Directory containing alert JSON files, OR scenario directory (auto-detects 'alerts/' subdirectory)"
+                            "description": "Path to alerts directory (e.g., alerts/) containing alerts_at_*.json files, OR snapshot directory (auto-detects 'alerts/' subdirectory)"
                         },
                         "state_filter": {
                             "type": "string",
@@ -375,7 +375,7 @@ def register_tools(server: Server) -> None:
                     "properties": {
                         "k8s_objects_file": {
                             "type": "string",
-                            "description": "Path to the k8s_objects TSV file"
+                            "description": "Path to Kubernetes objects TSV file (e.g., k8s_objects.tsv)"
                         },
                         "k8_object_name": {
                             "type": "string",
@@ -422,11 +422,11 @@ def register_tools(server: Server) -> None:
                         },
                         "snapshot_dir": {
                             "type": "string",
-                            "description": "Path to snapshot directory containing k8s_events*.tsv, k8s_objects*.tsv, otel_traces.tsv, alerts/, metrics/"
+                            "description": "Path to snapshot directory containing k8s_events.tsv, k8s_objects.tsv, otel_traces.tsv, alerts/, metrics/"
                         },
                         "topology_file": {
                             "type": "string",
-                            "description": "Optional: Path to topology JSON (if not provided, will look for operational_topology.json in snapshot_dir or build one)"
+                            "description": "Optional: Path to topology JSON file (e.g., operational_topology.json). If not provided, will look in snapshot_dir or build one."
                         },
                         "start_time": {
                             "type": "string",

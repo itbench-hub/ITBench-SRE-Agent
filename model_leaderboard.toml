@@ -6,7 +6,11 @@
 # ============================================================================
 
 # Path to the ITBench scenarios directory
-scenarios_dir = "./ITBench-Snapshots/snapshots/sre/v0.1-ca9707b2-8b70-468b-a8f9-9658438f80b1"
+# Can point to:
+#   - A directory containing Scenario-* subdirs
+#   - A directory containing numbered subdirs (1/, 2/, 3/) with ground_truth.yaml
+#   - A nested structure like ./snapshots/sre/version/uuid/
+scenarios_dir = "./ITBench-Snapshots"
 
 # Output directory for leaderboard results
 # Structure: leaderboard_dir/{agent_name}/{scenario_name}/{run_id}/

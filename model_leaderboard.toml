@@ -33,13 +33,39 @@ collect_traces = true
 # ============================================================================
 # Judge Configuration
 # ============================================================================
-# The judge evaluates agent outputs against ground truth.
-# API key is read from environment variable OR_API_KEY
+# The judge evaluates agent outputs against ground truth using litellm.
+# Supports all litellm providers: OpenAI, Azure, Anthropic, Google, LiteLLM proxy, etc.
+#
+# API key is read from environment based on provider:
+#   - openrouter: OR_API_KEY or OPENROUTER_API_KEY
+#   - openai: OPENAI_API_KEY
+#   - azure: AZURE_OPENAI_API_KEY
+#   - litellm_proxy: LITELLM_API_KEY or OPENAI_API_KEY
 
 [judge]
 model = "openrouter/google/gemini-2.5-pro"
 provider = "openrouter"
 base_url = "https://openrouter.ai/api/v1"
+
+# --- Alternative Judge Configurations ---
+#
+# LiteLLM Proxy (self-hosted):
+# [judge]
+# model = "gpt-4"                          # Model name as configured in your proxy
+# provider = "litellm_proxy"
+# base_url = "http://localhost:4000"       # Your LiteLLM proxy URL
+#
+# OpenAI Direct:
+# [judge]
+# model = "gpt-4o"
+# provider = "openai"
+# base_url = "https://api.openai.com/v1"
+#
+# Azure OpenAI:
+# [judge]
+# model = "azure/gpt-4"                    # azure/<deployment_name>
+# provider = "azure"
+# base_url = "https://YOUR_RESOURCE.openai.azure.com"
 
 # ============================================================================
 # Agent Configurations

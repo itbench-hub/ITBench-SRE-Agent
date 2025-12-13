@@ -10,5 +10,8 @@ asteval>=1.0.0
 mcp>=1.0.0
 pandas>=2.0.0
 
+# Leaderboard (connection testing)
+requests>=2.28.0
+
 # Config parsing (tomllib is built-in for Python 3.11+)
 tomli>=2.0.0;python_version<"3.11"

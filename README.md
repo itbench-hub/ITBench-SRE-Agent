@@ -1,276 +1,397 @@
-# SRE Support Agent
+# ITBench SRE Agent
 
-A diagnostic SRE (Site Reliability Engineering) agent built with [LangGraph](https://github.com/langchain-ai/langgraph) and [litellm](https://github.com/BerriAI/litellm). This agent is designed to help diagnose system issues by providing controlled access to file operations, search capabilities, and system commands.
+A modular framework for evaluating LLM agents on Site Reliability Engineering (SRE) incident diagnosis tasks using the [ITBench](https://github.com/itbench-hub/ITBench-Snapshots) benchmark.
 
-## Features
+## Architecture Overview
 
-*   **Diagnostic Tools**:
-    *   **File Operations**: Read, list directories (edit/delete/create can be disabled).
-    *   **Search**: Grep, file name search, and basic codebase search.
-    *   **System**: Execute terminal commands (sandboxed by configuration).
-*   **Fine-Grained Control**: Enable or disable individual tools via configuration to ensure safety.
-*   **Model Agnostic**: Supports various LLM backends via litellm (OpenAI, Anthropic, Google, Azure, AWS Bedrock, etc.).
-*   **Blacklist Support**: Prevent access to sensitive files using glob patterns.
-*   **Configuration**: TOML-based configuration for easy setup.
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           ITBench SRE Framework                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────┐    ┌──────────────────┐    ┌──────────────────────────┐  │
+│  │    Zero      │───▶│  ITBench         │───▶│     ITBench Judge        │  │
+│  │ Agent Runner │    │  Leaderboard     │    │   (LLM-as-a-Judge)       │  │
+│  └──────────────┘    └──────────────────┘    └──────────────────────────┘  │
+│        │                     │                          │                   │
+│        ▼                     ▼                          ▼                   │
+│  ┌──────────────┐    ┌──────────────────┐    ┌──────────────────────────┐  │
+│  │   Codex CLI  │    │ model_leaderboard│    │   agent_output.json      │  │
+│  │  (OpenAI)    │    │     .toml        │    │   judge_output.json      │  │
+│  └──────────────┘    └──────────────────┘    └──────────────────────────┘  │
+│                                                                             │
+│                              ┌─────────────────┐                            │
+│                              │    Website      │                            │
+│                              │  (Leaderboard)  │                            │
+│                              └─────────────────┘                            │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-## Prerequisites
+### Components
 
-*   Python 3.12+
-*   [uv](https://github.com/astral-sh/uv) (Recommended for dependency management)
+| Module | Description | Documentation |
+|--------|-------------|---------------|
+| **[Zero](./zero/)** | Thin wrapper around [Codex CLI](https://github.com/openai/codex) for running SRE agents | [zero/zero-config/README.md](./zero/zero-config/README.md) |
+| **[ITBench Leaderboard](./itbench_leaderboard/)** | Orchestrates agent runs across scenarios, collects results | [itbench_leaderboard/README.md](./itbench_leaderboard/README.md) |
+| **[ITBench Judge](./itbench_judge/)** | LLM-as-a-Judge evaluator for agent outputs | [itbench_judge/README.md](./itbench_judge/README.md) |
+| **[Website](./website/)** | Static leaderboard visualization | [website/README.md](./website/README.md) |
+| **[SRE Tools](./sre_tools/)** | MCP server with SRE diagnostic tools | [sre_tools/README.md](./sre_tools/README.md) |
 
-## Installation
+### SRE Tools Overview
 
-1.  **Clone the repository with submodules** (if you haven't already):
-    ```bash
-    git clone --recurse-submodules <repository-url>
-    cd sre_support_agent
-    ```
+The SRE Tools module provides specialized MCP (Model Context Protocol) tools for incident investigation. These tools are automatically available to agents via the Zero runner.
 
-    If you've already cloned the repository without submodules, initialize them:
-    ```bash
-    git submodule update --init --recursive
-    ```
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| **`alert_summary`** ⭐ | High-level overview of all alerts | **Start here** - Get alert types, entities, duration, frequency |
+| **`alert_analysis`** | Detailed alert analysis with filters/grouping | Filter by severity, group by alertname, track duration |
+| **`event_analysis`** | Analyze K8s events | Find warnings, unhealthy pods, scheduling issues |
+| **`metric_analysis`** | Batch metric queries with derived metrics | CPU throttling %, memory utilization across pods |
+| **`get_metric_anomalies`** | Detect metric anomalies | Find CPU spikes, memory leaks, error rate increases |
+| **`get_trace_error_tree`** | Analyze distributed traces | Find where transactions fail in call chain |
+| **`build_topology`** | Build operational topology graph | Map service dependencies, K8s object relationships |
+| **`topology_analysis`** | Analyze entity dependencies | Find upstream/downstream services, call chains |
+| **`k8s_spec_change_analysis`** | Track K8s spec changes | Identify config drift, correlate incidents with changes |
+| **`get_context_contract`** ⭐ | Aggregate full entity context | **All-in-one**: events, alerts, traces, metrics, dependencies |
 
-2.  **Create a virtual environment and install dependencies**:
+**Typical Investigation Flow:**
+```
+1. alert_summary → See what alerts are firing
+2. get_context_contract → Get full context for alerted entity
+3. topology_analysis → Understand dependencies
+4. metric_analysis → Check resource metrics
+5. k8s_spec_change_analysis → Look for recent changes
+```
 
-    Using `uv` (Recommended):
-    ```bash
-    uv sync
-    ```
+📖 **Full tool documentation**: [sre_tools/README.md](./sre_tools/README.md)
 
-    Using standard `pip`:
-    ```bash
-    python -m venv .venv
-    source .venv/bin/activate
-    pip install -r requirements.txt
-    ```
+---
 
-## Configuration
+## Quick Start
 
-The agent is configured via an `agent.toml` file. A template is provided as `agent.toml.example`.
+### Prerequisites
 
-### Quick Start
+- Python 3.12+
+- [uv](https://github.com/astral-sh/uv) (recommended) or pip
+- [Codex CLI](https://github.com/openai/codex) installed (`npm install -g @openai/codex`)
+- API keys for your model provider (OpenRouter, Azure, etc.)
 
-1.  **Copy the example configuration**:
-    ```bash
-    cp agent.toml.example agent.toml
-    ```
+### Installation
 
-2.  **Edit `agent.toml`** and configure:
-    *   **Model**: Set `model_name` to your preferred model (see examples in the file)
-    *   **API Key**: Set your API key in `[llm_config]`
-    *   **Base URL**: Set the API endpoint (OpenRouter, litellm proxy, etc.)
-    *   **Base Directory**: Set `base_dir` in `[file_tools]` to the scenario directory
+```bash
+# Clone with submodules
+git clone --recurse-submodules <repository-url>
+cd sre_support_agent
 
-### Configuration Options
-
-```toml
-# agents/sre/agent.toml
-
-# --- Model Configuration ---
-# For OpenRouter: "openrouter/provider/model-name"
-# For litellm proxy: "litellm_proxy/provider/model-name"
-model_name = "openrouter/anthropic/claude-opus-4.5"
-
-# Agent execution limit (each tool call = 2 steps)
-recursion_limit = 100
-
-# Max characters for tool output when summarization is disabled
-max_tool_output_length = 10000
-
-[llm_config]
-api_key = "your-api-key"
-base_url = "https://openrouter.ai/api/v1"
-
-# --- Tool Configuration ---
-
-[file_tools]
-enabled = true
-base_dir = "./snapshots/scenario"  # Restrict operations to this directory
-enable_read_file = true
-enable_list_directory = true
-# Dangerous operations disabled by default
-enable_edit_file = false
-enable_create_file = false
-enable_delete_file = false
-
-[search_tools]
-enabled = true
-max_results = 20
-enable_grep = true
-enable_file_search = true
-enable_codebase_search = true
-
-[system_tools]
-enabled = true
-enable_run_terminal_cmd = true
-
-[blacklist]
-# Files matching these patterns cannot be read, grepped, or listed
-patterns = [
-    "ground_truth*.yaml",
-    "*.secret",
-    "*.key",
-    ".env*",
-]
+# Install dependencies
+uv sync
+# or: pip install -r requirements.txt
 ```
 
 ### Environment Variables
 
-You can also set API keys via environment variables:
 ```bash
-export OPENAI_API_KEY="your-api-key"
-# or for OpenRouter
-export OPENROUTER_API_KEY="your-key"
+export OR_API_KEY="your-openrouter-key"        # OpenRouter
+export ETE_API_KEY="your-ete-key"              # ETE LiteLLM Proxy
+export AZURE_OPENAI_API_KEY="your-azure-key"  # Azure OpenAI
 ```
 
-## Usage
+---
 
-Run the agent as a Python module:
+## Running Components
+
+### 1. Run Agent Independently (Zero)
+
+Zero is a thin wrapper around Codex CLI that handles workspace setup, prompt templating, and configuration.
 
 ```bash
-# From the agents/sre directory
-python -m sre_support_agent "Diagnose the incident"
+# Basic run with prompt template
+python -m zero --workspace /tmp/work \
+    --read-only-dir ./ITBench-Snapshots/snapshots/sre/v0.1-.../Scenario-3 \
+    --prompt-file ./zero/zero-config/prompts/tap.md \
+    --variable "SNAPSHOT_DIRS=/path/to/Scenario-3" \
+    -- exec --full-auto -m "Azure/gpt-5.1-2025-11-13"
 
-# With a specific scenario directory
-python -m sre_support_agent --dir ./snapshots/Scenario-3 "Investigate alerts"
+# With additional user query
+python -m zero --workspace /tmp/work \
+    --read-only-dir ./Scenario-3 \
+    --prompt-file ./zero/zero-config/prompts/tap.md \
+    --variable "SNAPSHOT_DIRS=/path/to/Scenario-3" \
+    -- exec --full-auto -m "google/gemini-2.5-pro" \
+    "Focus on the payment service alerts"
 
-# With a custom config file
-python -m sre_support_agent --config custom.toml "Diagnose the incident"
+# Interactive mode (TUI)
+python -m zero --workspace /tmp/work \
+    --read-only-dir ./Scenario-3 \
+    -- -m "openai/gpt-5.1"
 ```
 
-### Example Queries
-*   "Diagnose the incident"
-*   "Investigate the alerts and find the contributing factors"
-*   "Analyze the kubernetes events and traces to find the issue"
+📖 **Full documentation**: [zero/zero-config/README.md](./zero/zero-config/README.md)
 
-## Validation & Leaderboard
+### 2. Run Judge Independently
 
-The repository includes [ITBench-Snapshots](https://github.com/itbench-hub/ITBench-Snapshots) as a submodule, which contains benchmark scenarios for validating SRE agent performance.
-
-### Running a Single Scenario
-
-To validate your agent against a specific benchmark scenario:
+Evaluate a single agent output against ground truth:
 
 ```bash
-# Run the agent against a specific scenario
-python -m sre_support_agent --dir ./ITBench-Snapshots/snapshots/sre/v0.1-ca9707b2-8b70-468b-a8f9-9658438f80b1/ca9707b2-8b70-468b-a8f9-9658438f80b1/Scenario-3 "Diagnose the incident"
+python -c "
+from pathlib import Path
+from itbench_judge.sre import evaluate_single_run, RunMetadata, JudgeConfig
+
+result = evaluate_single_run(
+    agent_output_path=Path('./agent_output.json'),
+    ground_truth_path=Path('./Scenario-3/ground_truth.yaml'),
+    metadata=RunMetadata(
+        scenario_name='Scenario-3',
+        agent_model='gpt-5.1',
+        agent_provider='azure',
+        run_id='1',
+    ),
+    judge_config=JudgeConfig(
+        model='openrouter/google/gemini-2.5-pro',
+        provider='openrouter',
+        base_url='https://openrouter.ai/api/v1',
+    ),
+)
+print(f'Score: {result.primary_score}/100')
+print(f'Scores: {result.scores}')
+"
 ```
 
-### Running the Full Benchmark
+📖 **Full documentation**: [itbench_judge/README.md](./itbench_judge/README.md)
 
-Use `create_leaderboard.py` to evaluate the agent across all scenarios and generate leaderboard results:
+### 3. Run Leaderboard (Full Benchmark)
+
+The leaderboard orchestrates running multiple agents across all scenarios with multiple runs for statistical significance.
 
 ```bash
-# Basic usage (uses config from agent.toml)
-python create_leaderboard.py
+# Configure agents in model_leaderboard.toml, then:
+python -m itbench_leaderboard --config model_leaderboard.toml
 
-# Specify a different model for the agent
-python create_leaderboard.py --model_name openrouter/anthropic/claude-sonnet-4
+# With options
+python -m itbench_leaderboard --config model_leaderboard.toml \
+    --runs 3 \                    # 3 runs per scenario
+    --agents gpt-5.1-azure \      # Only run specific agent
+    --scenarios Scenario-3 \      # Only run specific scenario
+    --verbose
 
-# Full configuration with custom API endpoints
-python create_leaderboard.py \
-    --model_name openrouter/anthropic/claude-sonnet-4 \
-    --base_url https://openrouter.ai/api/v1 \
-    --api_key your-agent-api-key \
-    --judge_model google/gemini-2.5-pro \
-    --judge_base_url https://openrouter.ai/api/v1 \
-    --judge_api_key your-judge-api-key
-
-# Run fewer iterations (default is 5 runs per scenario)
-python create_leaderboard.py --runs 3
-
-# Run specific scenarios only
-python create_leaderboard.py --scenarios Scenario-3 Scenario-16
+# Re-judge existing outputs (without re-running agents)
+python -m itbench_leaderboard --config model_leaderboard.toml --rejudge
 ```
 
-#### CLI Options
+📖 **Full documentation**: [itbench_leaderboard/README.md](./itbench_leaderboard/README.md)
 
-| Option | Description |
-|--------|-------------|
-| `--model_name` | Model name for the SRE agent (overrides config) |
-| `--base_url` | Base URL for the SRE agent API |
-| `--api_key` | API key for the SRE agent |
-| `--judge_model` | Model for LLM-as-judge evaluation (default: `google/gemini-2.5-pro`) |
-| `--judge_base_url` | Base URL for judge model API (default: OpenRouter) |
-| `--judge_api_key` | API key for judge model (or set `OPENROUTER_API_KEY` env var) |
-| `--runs` | Number of runs per scenario (default: 5) |
-| `--scenarios` | Specific scenarios to evaluate |
-| `--config` | Path to base config file |
-| `--output` | Custom output file path |
+---
 
-### Viewing the Leaderboard
+## Configuration
 
-Results are saved to `website/results/result_<model_name>.json`. To view the leaderboard:
+### model_leaderboard.toml
+
+```toml
+# Scenarios and output
+scenarios_dir = "./ITBench-Snapshots/snapshots/sre/v0.1-..."
+leaderboard_dir = "./leaderboard_results"
+runs_per_scenario = 3
+concurrent = true
+max_workers = 3
+
+# Judge configuration
+[judge]
+model = "openrouter/google/gemini-2.5-pro"
+provider = "openrouter"
+base_url = "https://openrouter.ai/api/v1"
+
+# Agent configurations
+[[agents]]
+name = "gpt-5.1-azure"
+model = "Azure/gpt-5.1-2025-11-13"
+provider = "ete"
+prompt_file = "./zero/zero-config/prompts/tap.md"
+wire_api = "responses"  # "chat" for non-OpenAI models
+
+[[agents]]
+name = "gemini-2.5-pro"
+model = "google/gemini-2.5-pro"
+provider = "openrouter"
+prompt_file = "./zero/zero-config/prompts/tap.md"
+wire_api = "chat"  # Required for Gemini!
+```
+
+### wire_api Setting (Critical!)
+
+| Model Provider | wire_api |
+|----------------|----------|
+| OpenAI (gpt-*, o*-mini) | `responses` |
+| Azure OpenAI | `responses` |
+| Anthropic (claude-*) | `chat` ⚠️ |
+| Google (gemini-*) | `chat` ⚠️ |
+| Other models | `chat` ⚠️ |
+
+**Using `wire_api = "responses"` with non-OpenAI models will cause function calls to fail!**
+
+---
+
+## Output Structure
+
+```
+leaderboard_results/
+├── gpt-5.1-azure/
+│   ├── Scenario-1/
+│   │   ├── 1/                          # Run 1
+│   │   │   ├── agent_output.json       # Agent diagnosis
+│   │   │   ├── judge_output.json       # Judge evaluation
+│   │   │   ├── AGENTS.md               # Prompt given to agent
+│   │   │   ├── config.toml             # Codex config
+│   │   │   └── traces/
+│   │   │       └── traces.jsonl        # OTEL traces
+│   │   ├── 2/                          # Run 2
+│   │   └── 3/                          # Run 3
+│   └── Scenario-3/
+│       └── ...
+├── gemini-2.5-pro/
+│   └── ...
+└── results/
+    ├── gpt-5.1-azure.json              # Per-agent results
+    ├── gemini-2.5-pro.json
+    └── leaderboard.json                # Combined leaderboard
+```
+
+---
+
+## Viewing Results
+
+### Leaderboard Website
 
 ```bash
-# Serve the static website locally
 cd website
 python -m http.server 8000
-# Open http://localhost:8000 in your browser
+# Open http://localhost:8000
 ```
 
-The leaderboard displays:
-- **Rankings**: Models sorted by average score (descending)
-- **Per-scenario breakdown**: Click any model to see detailed per-scenario results
-- **Variability metrics**: Min/max/avg scores across multiple runs
+### JSON Results
 
-## Development
-
-This project uses `black` and `isort` for code formatting.
-
-**Install dev dependencies:**
 ```bash
-uv sync --extra dev
+# View leaderboard rankings
+cat leaderboard_results/results/leaderboard.json | jq '.rankings'
+
+# View per-scenario breakdown
+cat leaderboard_results/results/gpt-5.1-azure.json | jq '.scenarios'
 ```
 
-**Format code:**
-```bash
-uv run black sre_support_agent/
-uv run isort sre_support_agent/
-```
+---
+
+## Metrics
+
+The judge evaluates agent outputs on these metrics:
+
+| Metric | Description | Range |
+|--------|-------------|-------|
+| `root_cause_entity` | Did agent identify correct root cause entity? | 0-100 |
+| `root_cause_reasoning` | Quality of reasoning for root cause | 0-100 |
+| `root_cause_reasoning_partial` | Partial credit for reasoning | 0-100 |
+| `propagation_chain` | Accuracy of failure propagation chain | 0-100 |
+| `root_cause_proximity_no_fp` | How close to root cause (no false positives) | 0-100 |
+| `root_cause_proximity_with_fp` | How close to root cause (with FP penalty) | 0-100 |
+
+---
 
 ## Project Structure
 
 ```
 sre_support_agent/
-├── agent.toml.example      # Configuration template (copy to agent.toml)
-├── create_leaderboard.py   # Benchmark evaluation script
-├── pyproject.toml          # Project metadata and dependencies
-├── requirements.txt        # Dependencies for pip install
-├── README.md
-├── ITBench-Snapshots/      # Benchmark scenarios (git submodule)
-├── website/                # Static leaderboard website
-│   ├── index.html          # Leaderboard UI
-│   └── results/            # Generated result JSON files
-└── sre_support_agent/      # Main package
-    ├── __init__.py
-    ├── __main__.py         # Entry point for `python -m sre_support_agent`
-    ├── config.py           # Configuration models
-    ├── graph.py            # LangGraph workflow definition
-    ├── langchain_tools.py  # Tool wrappers with schema generation
-    ├── main.py             # Main execution logic
-    ├── prompts.py          # System prompts
-    └── tools/              # Tool implementations
-        ├── __init__.py
-        ├── file_tools.py
-        ├── search_tools.py
-        ├── system_tools.py
-        └── task_tools.py
+├── README.md                      # This file
+├── model_leaderboard.toml         # Leaderboard configuration
+├── pyproject.toml                 # Python project config
+├── requirements.txt
+│
+├── zero/                          # Agent runner (Codex wrapper)
+│   ├── cli.py                     # CLI entry point
+│   ├── config.py                  # Workspace setup
+│   ├── runner.py                  # Codex execution
+│   └── zero-config/               # Bundled config
+│       ├── README.md              # Zero documentation
+│       ├── config.toml            # Codex config template
+│       ├── prompts/               # Prompt templates
+│       │   └── tap.md             # Main SRE prompt
+│       └── policy/                # Execution policies
+│
+├── itbench_leaderboard/           # Leaderboard orchestrator
+│   ├── README.md
+│   ├── cli.py                     # CLI entry point
+│   ├── config.py                  # TOML config loader
+│   ├── runner.py                  # Agent subprocess runner
+│   └── results.py                 # Results aggregation
+│
+├── itbench_judge/                 # LLM-as-a-Judge
+│   ├── README.md
+│   └── sre/
+│       ├── evaluator.py           # Evaluation logic
+│       └── prompts.py             # Judge prompts
+│
+├── sre_tools/                     # MCP tools for SRE
+│   ├── README.md                  # Full tool documentation
+│   ├── manifest.toml              # Tool registry
+│   ├── utils.py                   # Shared utilities
+│   └── cli/sre_utils/             # Tool implementations
+│       └── tools.py               # All SRE analysis tools
+│
+├── website/                       # Static leaderboard UI
+│   ├── README.md
+│   ├── index.html
+│   └── results/                   # Generated JSON results
+│
+├── ITBench-Snapshots/             # Benchmark data (submodule)
+│   └── snapshots/sre/...
+│
+└── workspace/                     # Shared data
+    └── shared/
+        └── application_architecture.json
 ```
 
-## Supported Models
+---
 
-The agent uses litellm for model compatibility. Some tested models:
+## Development
 
-| Provider | Model | Notes |
-|----------|-------|-------|
-| OpenRouter | `openrouter/anthropic/claude-opus-4.5` | Excellent tool calling |
-| OpenRouter | `openrouter/openai/gpt-5.1` | Good performance |
-| OpenRouter | `openrouter/google/gemini-2.5-pro` | Good performance |
-| OpenRouter | `openrouter/qwen/qwen3-max` | Good tool calling |
-| Azure | `litellm_proxy/Azure/gpt-5.1-*` | Via litellm proxy |
-| AWS | `litellm_proxy/aws/claude-opus-4-5` | Via litellm proxy |
-| GCP | `litellm_proxy/GCP/gemini-2.5-pro` | Via litellm proxy |
+```bash
+# Install dev dependencies
+uv sync --extra dev
 
-**Note**: Gemini 3 models currently have issues with thought signatures in multi-turn tool calling.
+# Format code
+uv run black .
+uv run isort .
+
+# Run single agent test
+python -m zero --workspace /tmp/test --dry-run \
+    --prompt-file ./zero/zero-config/prompts/tap.md \
+    --variable "SNAPSHOT_DIRS=/path/to/scenario" \
+    -- exec -m "openai/gpt-5.1"
+```
+
+---
+
+## Troubleshooting
+
+### Agent produces no output
+
+1. Check `traces/stdout.log` for errors
+2. Verify API key is set correctly
+3. Check `wire_api` setting matches model provider
+4. Try with `--verbose` flag
+
+### Judge gives 0 scores
+
+1. Verify `agent_output.json` has correct format
+2. Check `judge_output.json` for error messages
+3. Verify ground truth file exists
+
+### Leaderboard skips scenarios
+
+The leaderboard only skips scenarios where `agent_output.json` exists. Failed runs (missing output) will be re-run automatically.
+
+---
+
+## References
+
+- [ITBench Benchmark](https://github.com/itbench-hub/ITBench-Snapshots)
+- [Codex CLI](https://github.com/openai/codex)
+- [Codex Configuration](https://github.com/openai/codex/blob/main/docs/config.md)

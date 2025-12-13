@@ -1,9 +1,14 @@
-langgraph
-langchain-core
-litellm
-python-dotenv
-toml
-pydantic
-pyyaml
-openai
-asteval
+# ITBench SRE Agent Dependencies
+# Install with: pip install -r requirements.txt
+
+# Judge (LLM-as-a-Judge evaluation)
+litellm>=1.80.7
+pyyaml>=6.0.0
+asteval>=1.0.0
+
+# MCP Tools (SRE analysis tools)
+mcp>=1.0.0
+pandas>=2.0.0
+
+# Config parsing (tomllib is built-in for Python 3.11+)
+tomli>=2.0.0;python_version<"3.11"

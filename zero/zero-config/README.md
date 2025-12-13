@@ -1,153 +1,225 @@
 # Zero Configuration
 
-This directory contains configuration files for the `sre_support_engineer` profile.
+This directory contains bundled configuration files for Zero.
+
+When you run Zero, these files are **copied to your workspace**:
+
+- `config.toml` → `workspace/config.toml`
+- `prompts/` → `workspace/prompts/`
+- `policy/` → `workspace/policy/`
 
 ## Quick Start
 
 ```bash
-# Use zero-config directory directly as CODEX_HOME
-export CODEX_HOME=/path/to/zero-config
+# Basic exec mode with prompt template
+python -m zero --workspace /tmp/work \
+    --read-only-dir ./Scenario-1 \
+    --prompt-file ./zero/zero-config/prompts/tap.md \
+    --variable "SNAPSHOT_DIRS=- /path/to/Scenario-1" \
+    -- exec -m "openai/gpt-5.1"
 
-# Run with the profile
-codex --profile sre_support_engineer "analyze the incident"
+# With additional user query appended
+python -m zero --workspace /tmp/work \
+    --read-only-dir ./Scenario-1 \
+    --prompt-file ./zero/zero-config/prompts/tap.md \
+    --variable "SNAPSHOT_DIRS=- /path/to/Scenario-1" \
+    -- exec -m "openai/gpt-5.1" "focus on the cart service"
 
-# Or one-liner
-CODEX_HOME=./zero-config codex exec "analyze the incident"
+# Interactive TUI mode (no prompt substitution)
+python -m zero --workspace /tmp/work \
+    --read-only-dir ./Scenario-1 \
+    -- -m "openai/gpt-5.1"
+
+# With trace collection
+python -m zero --workspace /tmp/work \
+    --read-only-dir ./Scenario-1 \
+    --prompt-file ./prompts/tap.md \
+    --variable "SNAPSHOT_DIRS=- /path/to/Scenario-1" \
+    --collect-traces \
+    -- exec -m "openai/gpt-5.1"
 ```
 
-## Summary
+## What Zero Does
 
-| Method | Command |
-|--------|---------|
-| **CODEX_HOME** | `CODEX_HOME=./zero-config codex exec "task"` |
-| **CLI flags** | `codex exec -c 'model="o3"' -c 'model_reasoning_effort="high"' "task"` |
-| **Copy to ~/.codex** | Traditional installation (see Option B below) |
+1. **Creates workspace** with proper structure
+2. **Copies config** (`config.toml`) with modifications:
+   - Updates `writable_roots` to workspace
+   - Adds trust entry for workspace
+3. **Copies prompts and policies** to workspace
+4. **Initializes git** in workspace (Codex trusts git repos)
+5. **Substitutes prompt variables** (when `--prompt-file` is provided)
+6. **Writes AGENTS.md** with substituted prompt (Codex reads this automatically)
+7. **Sets CODEX_HOME** to workspace directory
+8. **Runs Codex** with pass-through arguments + user query
 
-The `zero-config/` directory is fully portable - just set `CODEX_HOME` to point to it and everything (config, prompts, policies) will be loaded from there.
+## Zero-only Flags
 
-## Using Zero CLI
+| Flag | Description |
+|------|-------------|
+| `--workspace PATH` / `-w PATH` | Workspace directory (required). Becomes CODEX_HOME and cwd. |
+| `--read-only-dir PATH` / `-r PATH` | Read-only data directory (repeatable). |
+| `--prompt-file PATH` | Prompt template file for variable substitution. |
+| `--variable KEY=VALUE` / `-V KEY=VALUE` | Variable substitution (repeatable). Keys are uppercased. |
+| `--output-file NAME` | Expected output file (exec mode). Auto-retries if missing. Default: `agent_output.json` |
+| `--max-retries N` | Max retries if output file not created (exec mode). Default: `5` |
+| `--collect-traces` | Enable OTEL trace collection. |
+| `--otel-port PORT` | Port for OTEL collector (default: 4318). |
+| `--verbose` / `-v` | Enable verbose output. |
+| `--dry-run` | Print command without executing. |
 
-Zero provides a higher-level CLI wrapper around Codex with session management:
+## Prompt Variable Substitution
+
+Zero supports Codex-style variable substitution using `$VARNAME` format.
+
+### Auto-provided Variables
+
+| Variable | Value |
+|----------|-------|
+| `$WORKSPACE_DIR` | Workspace directory path (auto-provided) |
+
+### User-provided Variables
+
+All other variables must be provided via `--variable`:
 
 ```bash
-# Basic usage
-python -m zero --session-dir /tmp/session --read-only-dir /path/to/Scenario-1
-
-# Multiple read-only directories
-python -m zero --session-dir /tmp/session \
-  --read-only-dir /path/to/scenario \
-  --read-only-dir /path/to/shared-data
-
-# With tracing enabled
-python -m zero --session-dir /tmp/session --read-only-dir /path/to/scenario \
-  --collect-traces
+--variable "SNAPSHOT_DIRS=- /path/to/scenario"
+--variable "OUTPUT_PATH=/tmp/work/output.json"
+--variable "MY_CUSTOM_VAR=some value"
 ```
 
-## Installation
+### Variable Format Rules
 
-### Option A: Use as standalone CODEX_HOME (Recommended)
+- Variables use `$VARNAME` format (uppercase, 2+ characters)
+- LaTeX math expressions like `$L$`, `$v$`, `$P$` are **NOT** treated as variables
+- If any `$VARNAME` remains unsubstituted, Zero fails with an error
 
-Use this directory directly without copying:
+### Example Prompt Template
+
+```markdown
+# My Agent Instructions
+
+Analyze data in: $SNAPSHOT_DIRS
+
+Working directory: $WORKSPACE_DIR
+
+## Algorithm
+Use status codes: $L=0$ (healthy), $L=1$ (broken)  ← LaTeX, not variables!
+```
+
+## Workspace Structure
+
+After running Zero with `--prompt-file`:
+
+```
+workspace/
+├── .git/           # Git repo (for Codex trust)
+├── AGENTS.md       # ← Substituted prompt (Codex reads automatically!)
+├── config.toml     # Codex configuration
+├── prompts/        # Original prompt templates
+├── policy/         # Execution policies
+├── traces/         # OTEL traces, stdout logs
+│   └── traces.jsonl
+└── agent_output.json  # Agent output (created by agent)
+```
+
+## Reserved Flags
+
+Zero **rejects** the following Codex flags:
+
+| Flag | Reason |
+|------|--------|
+| `-C` / `--cd` | Zero controls working directory via `--workspace`. |
+| `--json` | Zero always adds `--json` for `exec` mode. |
+
+---
+
+## Auto-Retry for Missing Output (Exec Mode)
+
+In `exec` mode, Zero automatically retries if the expected output file is not created after Codex exits.
+
+### How It Works
+
+1. After Codex exits, Zero checks if `agent_output.json` (or custom `--output-file`) exists in the workspace
+2. If the file is missing, Zero automatically re-runs Codex with:
+   ```
+   codex exec ... resume --last "I don't see agent_output.json file. Please resume the investigation and make sure to create the agent_output.json file as instructed earlier."
+   ```
+3. This repeats up to `--max-retries` times (default: 5)
+4. If the file is still missing after all retries, Zero exits with the last exit code
+
+### Example
 
 ```bash
-# Set CODEX_HOME to point to this directory
-export CODEX_HOME=/path/to/zero-config
+# Default: checks for agent_output.json, retries up to 5 times
+python -m zero --workspace /tmp/work \
+    --prompt-file ./prompts/tap.md \
+    --variable "SNAPSHOT_DIRS=- /path/to/data" \
+    -- exec --full-auto -m "Azure/gpt-5.1"
 
-# Run codex - it will use all config from this directory
-codex --profile sre_support_engineer "analyze the incident"
-
-# Or with codex exec
-codex exec --profile sre_support_engineer "analyze the incident"
+# Custom output file and retry count
+python -m zero --workspace /tmp/work \
+    --output-file output.json \
+    --max-retries 3 \
+    --prompt-file ./prompts/tap.md \
+    --variable "SNAPSHOT_DIRS=- /path/to/data" \
+    -- exec --full-auto -m "openai/o4-mini"
 ```
 
-### Option B: Copy to ~/.codex
+### Verbose Output
 
-Copy the files to your default Codex home directory:
+With `--verbose`, Zero shows retry attempts:
 
-```bash
-# Create directories
-mkdir -p ~/.codex/policy ~/.codex/prompts /tmp/zero-session
+```
+⚠ Output file not found: agent_output.json. Retrying with 'resume --last' (4 retries left)...
 
-# Copy configuration files
-cp config.toml ~/.codex/config.toml
-cp policy/sre_support_engineer.codexpolicy ~/.codex/policy/
-cp prompts/sre_support_engineer.md ~/.codex/prompts/
+============================================================
+Attempt: 2/6
+CODEX_HOME: /tmp/work
+Working directory: /tmp/work
+Command: ['codex', 'exec', '--json', '-m', 'openai/o4-mini', 'resume', '--last', "I don't see agent_output.json..."]
+============================================================
 ```
 
-### Option C: Pass config via command line
+---
 
-```bash
-codex exec \
-  -c 'model="o3"' \
-  -c 'model_reasoning_effort="high"' \
-  -c 'experimental_instructions_file="/path/to/sre_support_engineer.md"' \
-  -c 'approval_policy="never"' \
-  "analyze the incident"
-```
+## Model Provider Configuration
 
-## What's Included
+### ⚠️ IMPORTANT: wire_api Setting
 
-### Profile: `sre_support_engineer`
+**This is critical!** The `wire_api` setting must match the model provider:
 
-A profile designed for investigating Kubernetes incidents from captured snapshots.
+| Provider | Models | wire_api |
+|----------|--------|----------|
+| OpenAI (direct) | gpt-4o, gpt-5.1, o4-mini | `responses` |
+| Azure OpenAI | gpt-4o, gpt-5.1 | `responses` |
+| OpenRouter + OpenAI models | openai/gpt-5.1, openai/o4-mini | `responses` |
+| OpenRouter + Anthropic | anthropic/claude-opus-4.5 | `chat` ⚠️ |
+| OpenRouter + Google | google/gemini-2.5-pro | `chat` ⚠️ |
+| OpenRouter + Other | mistral/*, etc. | `chat` ⚠️ |
 
-**Configuration:**
+**If you use `wire_api = "responses"` with non-OpenAI models, function calls will fail with empty arguments!**
 
-| Setting | Value | Description |
-|---------|-------|-------------|
-| `model` | `o3` | High-capability reasoning model |
-| `model_provider` | `openai` | Default OpenAI API |
-| `model_reasoning_effort` | `high` | Maximum reasoning for complex RCA |
-| `model_reasoning_summary` | `detailed` | Full reasoning explanations |
-| `sandbox_mode` | `workspace-write` | Allow writing output files |
-| `approval_policy` | `never` | No prompts; execution policy controls access |
+### Example Configurations
 
-**Features:**
-- Custom prompt focused on incident root cause analysis
-- Auto-allows kubectl read commands (get, describe, logs, top, etc.)
-- Forbids destructive operations (delete, apply, rm, mv, etc.)
-- Outputs diagnosis to `output.json`
-- Session-based directory structure for organized output
-
-### Files
-
-| File | Purpose |
-|------|---------|
-| `agent.toml` | Main config with the sre_support_engineer profile |
-| `policy/sre_support_engineer.codexpolicy` | Execution policy for auto-allowing kubectl |
-| `prompts/sre_support_engineer.md` | Custom prompt for SRE incident investigation |
-
-## Configuration
-
-### Customizing the Model
-
-Edit `agent.toml` to change the model:
-
+#### OpenRouter with OpenAI models (responses)
 ```toml
-[profiles.sre_support_engineer]
-model = "gpt-5.1"                      # Or any supported model
-model_reasoning_effort = "medium"      # minimal, low, medium, high
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OR_API_KEY"
+wire_api = "responses"  # OK for openai/* models
 ```
 
-### Custom API Endpoint
-
-For custom/private API endpoints, uncomment and configure:
-
+#### OpenRouter with Claude/Gemini (chat)
 ```toml
-[model_providers.custom-openai]
-name = "Custom OpenAI Endpoint"
-base_url = "https://your-api-endpoint.example.com/v1"
-env_key = "CUSTOM_API_KEY"
-wire_api = "responses"
-
-[profiles.sre_support_engineer]
-model_provider = "custom-openai"
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OR_API_KEY"
+wire_api = "chat"  # Required for non-OpenAI models!
 ```
 
-### Azure OpenAI
-
-For Azure OpenAI, uncomment and configure:
-
+#### Azure OpenAI
 ```toml
 [model_providers.azure]
 name = "Azure OpenAI"
@@ -155,69 +227,97 @@ base_url = "https://YOUR_PROJECT.openai.azure.com/openai"
 env_key = "AZURE_OPENAI_API_KEY"
 query_params = { api-version = "2025-04-01-preview" }
 wire_api = "responses"
-
-[profiles.sre_support_engineer]
-model_provider = "azure"
-model = "your-deployment-name"
 ```
 
-### Session Directory
+### Customizing the Model
 
-Zero automatically creates a session directory structure:
-
-```
-session_dir/
-├── code/           # Agent-written code
-├── plans/          # Final action plans
-├── traces/         # OTEL traces, stdout.log, persistence/
-└── output.json     # Final diagnosis output
-```
-
-## Usage
-
-After installation, run:
+Pass via Codex CLI flags after `--`:
 
 ```bash
-# Using Zero CLI (recommended)
-python -m zero --session-dir /tmp/session --read-only-dir /path/to/incident-snapshot
-
-# Or using codex directly
-codex --profile sre_support_engineer
-
-# With a specific incident directory
-cd /path/to/incident-snapshot
-codex --profile sre_support_engineer
+python -m zero --workspace /tmp/work \
+    --prompt-file ./prompts/tap.md \
+    --variable "SNAPSHOT_DIRS=- /path/to/data" \
+    -- exec -m "openai/gpt-5.1" "investigate"
 ```
 
-The agent will:
-1. Analyze Kubernetes snapshots and alerts
-2. Identify entities involved in the incident
-3. Determine contributing factors
-4. Generate `output.json` with the diagnosis
+---
+
+## Lessons Learned & Troubleshooting
+
+### 1. `experimental_instructions_file` is Unreliable
+
+**Problem**: Codex's `experimental_instructions_file` config option doesn't work reliably.
+
+**Solution**: Zero writes the substituted prompt to `AGENTS.md` instead. Codex automatically reads `AGENTS.md` from the workspace.
+
+### 2. Function Calls Fail with Empty Arguments
+
+**Symptom**: 
+```json
+{"type":"function_call","name":"shell","arguments":""}
+"failed to parse function arguments: Error(\"EOF while parsing a value\"..."
+```
+
+**Cause**: Using `wire_api = "responses"` with non-OpenAI models (Claude, Gemini, etc.)
+
+**Solution**: Set `wire_api = "chat"` for non-OpenAI models.
+
+### 3. Profile-level Config Overrides Don't Work
+
+**Problem**: Settings inside `[profiles.xxx]` don't override `-c` flags reliably.
+
+**Solution**: Use the dedicated CLI flags (e.g., `-m` for model) which have highest precedence.
+
+### 4. Long Prompts Work Fine
+
+Long prompts (9KB+) passed via command-line arguments work correctly when using `subprocess.Popen` with a list (no shell escaping needed).
+
+### 5. LaTeX in Prompts
+
+LaTeX math expressions like `$L$`, `$v$`, `$P=1$` are safely ignored because Zero only matches variables with 2+ uppercase characters (`$VARNAME`).
+
+---
 
 ## Output Format
 
-The agent generates `output.json` with this structure:
+The agent generates `agent_output.json` with this structure:
 
 ```json
 {
   "entities": [
     {
-      "id": "pod/my-app-abc123",
+      "id": "Kind/name uid <kubernetes-uid>",
       "contributing_factor": true,
-      "reasoning": "Pod was OOMKilled due to memory limits",
-      "evidence": "kubectl logs show OutOfMemory errors at 14:32:01"
+      "reasoning": "Short explanation (max 2 sentences)",
+      "evidence": "Summary of alerts/events/logs/traces/metrics"
+    }
+  ],
+  "alerts_explained": [
+    {
+      "alert": "<alert name>",
+      "explanation": "Why this alert fired (max 2 sentences)",
+      "explained": true
     }
   ]
 }
 ```
 
+---
+
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `OPENAI_API_KEY` | API key for default OpenAI provider |
 | `OR_API_KEY` | API key for OpenRouter |
-| `OPENAI_BASE_URL` | Override base URL for OpenAI provider |
-| `AZURE_OPENAI_API_KEY` | API key for Azure OpenAI (if configured) |
+| `OPENAI_API_KEY` | API key for OpenAI |
+| `AZURE_OPENAI_API_KEY` | API key for Azure OpenAI |
 | `ETE_API_KEY` | API key for ETE LiteLLM Proxy |
+
+---
+
+## References
+
+- [Codex config docs](https://github.com/openai/codex/blob/main/docs/config.md)
+- [Codex prompts docs](https://github.com/openai/codex/blob/main/docs/prompts.md)
+- [Codex exec (non-interactive)](https://github.com/openai/codex/blob/main/docs/exec.md)
+- [Codex advanced](https://github.com/openai/codex/blob/main/docs/advanced.md)

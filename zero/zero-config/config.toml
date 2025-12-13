@@ -1,0 +1,105 @@
+# Zero Configuration
+# This file is copied to workspace/config.toml when running Zero
+
+# Set the default profile
+profile = "sre_support_engineer"
+
+# Note: experimental_instructions_file is NOT used because it's unreliable.
+# Instead, Zero passes prompts directly to codex exec via --prompt-file.
+
+# SRE Support Engineer Profile
+# For investigating Kubernetes incidents from captured snapshots
+[profiles.sre_support_engineer]
+
+# Model configuration
+# model = "Azure/gpt-5.1-2025-11-13"                           # Change to your preferred model
+# model = "GCP/gemini-2.5-pro"
+# model = "gcp/gemini-3-pro-preview"
+# model = "aws/claude-opus-4-1"
+# model = "openai/gpt-5.1"
+# model = "google/gemini-3-pro-preview"
+model_provider = "ete"              # Use default OpenAI provider
+
+# Reasoning configuration
+model_reasoning_effort = "medium"        # Use high reasoning for root cause analysis
+# model_reasoning_summary = "detailed"   # Get detailed reasoning summaries
+
+# Sandbox policy - allow writing to workspace and output directory
+sandbox_mode = "workspace-write"
+
+# Approval policy - execution policy (.codexpolicy) controls what's allowed
+# "never" = no prompts, execution policy handles allow/forbid decisions
+# Other options: "untrusted", "on-failure", "on-request"
+approval_policy = "never"
+
+# Additional writable directories for output storage
+[profiles.sre_support_engineer.sandbox_workspace_write]
+# Add the output directory where output.json will be stored
+# Update this path to your actual session directory
+writable_roots = [
+]
+# Allow network access if you need to query remote Kubernetes clusters
+network_access = false
+
+# ============================================================================
+# MCP Servers - Tools available to the agent
+# ============================================================================
+
+[mcp_servers.sre_utils]
+# SRE utility tools for incident investigation
+# Includes: alert_analysis, alert_summary, build_topology, event_analysis,
+#           get_context_contract, get_metric_anomalies, get_trace_error_tree,
+#           k8s_spec_change_analysis, metric_analysis, topology_analysis
+command = "python"
+args = ["-m", "sre_tools.cli.sre_utils"]
+
+# ============================================================================
+# Model Provider Configuration
+# ============================================================================
+#
+# ⚠️ IMPORTANT: wire_api Setting
+# ==============================
+# - "responses" = OpenAI Responses API (ONLY for OpenAI models)
+# - "chat"      = Chat Completions API (for ALL other models)
+#
+# If you use "responses" with non-OpenAI models (Claude, Gemini, etc.),
+# function calls will fail with empty arguments!
+#
+# Summary:
+#   OpenAI models (gpt-5.1, o4-mini, etc.)     → wire_api = "responses"
+#   Anthropic models (claude-*)                → wire_api = "chat"
+#   Google models (gemini-*)                   → wire_api = "chat"
+#   Other models (mistral, etc.)               → wire_api = "chat"
+
+[model_providers.ete]
+name = "ETE LITELLM PROXY"
+base_url = "https://ete-litellm.ai-models.vpc-int.res.ibm.com"
+env_key = "ETE_API_KEY"
+wire_api = "responses"  # Use "responses" only for OpenAI models
+
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OR_API_KEY"
+wire_api = "chat"  # Use "responses" only for openai/* models
+
+# ============================================================================
+# Azure OpenAI Configuration (Example)
+# ============================================================================
+# Uncomment and configure if you're using Azure OpenAI
+
+# [model_providers.azure]
+# name = "Azure OpenAI"
+# base_url = "https://YOUR_PROJECT_NAME.openai.azure.com/openai"
+# env_key = "AZURE_OPENAI_API_KEY"
+# query_params = { api-version = "2025-04-01-preview" }
+# wire_api = "responses"  # Azure OpenAI supports responses API
+
+# [otel]
+# OTEL tracing is configured automatically by Zero when --collect-traces is used.
+# If you want to enable it manually, use this format:
+#
+# [otel]
+# log_user_prompt = true
+# exporter = { otlp-http = { endpoint = "http://localhost:4318/v1/logs", protocol = "binary" } }
+

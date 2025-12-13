@@ -1,8 +1,8 @@
 """
-LAAJ (LLM-as-a-Judge) Prompts for RCA Evaluation.
+LAAJ (LLM-as-a-Judge) Prompts for SRE RCA Evaluation.
 
 These prompts are used to evaluate agent outputs against ground truth
-for root cause analysis tasks.
+for root cause analysis tasks in the SRE domain.
 """
 
 LAAJ_SYSTEM_PROMPT = """
@@ -263,5 +263,4 @@ Remember to be thorough in your evaluation and follow the new metric order. Thin
 - NEVER use any other tool names like "run", "python", "code", etc.
 - ALWAYS use `calculator_tool` for ALL mathematical operations
 """
-
 

@@ -49,7 +49,10 @@ Provides tools for building operational topology graphs and analyzing observabil
 | `get_metric_anomalies` | Focused anomaly detection for metrics |
 | `event_analysis` | Analyze K8s events with filtering, grouping, aggregation |
 | `get_trace_error_tree` | Analyze traces and generate error tree with statistics |
+| `alert_summary` | **Start here for alerts** - High-level summary: type, entity, duration, frequency |
 | `alert_analysis` | Analyze alerts with filtering, grouping, duration tracking |
+| `k8s_spec_change_analysis` | Track K8s object spec changes over time (config drift, rollouts) |
+| `get_context_contract` | **Aggregation tool** - Full context for an entity (events, alerts, traces, metrics, spec changes, dependencies) |
 
 #### Usage with Zero
 
@@ -230,8 +233,20 @@ event_analysis(events_file="...", group_by="object_name", agg="first")
 - `group_by` (Optional): Column(s) to group by. String or list. Special: `deployment` extracts from pod names.
 - `agg` (Optional): Aggregation type (`count`, `first`, `last`, `nunique`, `list`).
 - `sort_by` (Optional): Column to sort by.
-- `limit` (Optional): Max rows to return.
+- `limit` (Optional): Max rows to return. **Use `0` to fetch ALL rows** (no limit).
+- `offset` (Optional): Skip first N rows (pagination). Default: 0.
 - `start_time` / `end_time` (Optional): Time range filter.
+
+**Response includes pagination metadata:**
+```json
+{
+  "total_count": 450,
+  "offset": 100,
+  "limit": 100,
+  "returned_count": 100,
+  "data": [...]
+}
+```
 
 **5. get_trace_error_tree**
 
@@ -244,7 +259,46 @@ Analyzes traces to find error patterns. Returns a hierarchical tree of call path
 - `pivot_time` (Optional): Timestamp to compare stats before/after.
 - `delta_time` (Optional): Window size (default: "5m").
 
-**6. alert_analysis**
+**6. alert_summary** ⭐ (Start here for alerts)
+
+Provides a high-level overview of all alerts in a scenario. Use this FIRST to understand what's happening before diving into specific alerts with `alert_analysis`.
+
+**Returns for each unique alert:**
+- `alertname`: Type of alert (e.g., RequestErrorRate, TargetDown)
+- `entity`: Affected service/pod/component
+- `severity`: warning, critical, none
+- `state`: firing, pending
+- `first_seen` / `last_seen`: Time range when alert was observed
+- `duration_min`: How long the alert has been active
+- `occurrences`: How many times alert appeared in snapshots
+
+**Example 1: Get alert overview**
+```python
+alert_summary(base_dir="Scenario-3")
+# Returns: 
+# [
+#   {"alertname": "RequestErrorRate", "entity": "frontend", "severity": "warning", 
+#    "state": "firing", "first_seen": "2025-11-19 03:00:00", "last_seen": "2025-11-19 03:04:20",
+#    "duration_min": 4.3, "occurrences": 7},
+#   {"alertname": "TargetDown", "entity": "otel-collector", "severity": "warning",
+#    "duration_min": 4.4, "occurrences": 6},
+#   ...
+# ]
+```
+
+**Example 2: Only firing alerts with long duration**
+```python
+alert_summary(base_dir="Scenario-3", state_filter="firing", min_duration_min=5)
+# Returns only alerts that have been firing for 5+ minutes
+```
+
+**Arguments:**
+- `base_dir` (Required): Scenario directory OR alerts subdirectory (auto-detects)
+- `state_filter` (Optional): Filter by state ('firing', 'pending')
+- `min_duration_min` (Optional): Minimum duration in minutes
+- `limit` (Optional): Max alerts to return (default: 50)
+
+**7. alert_analysis**
 
 Analyzes alerts. Works like SQL: `filter → group_by → agg`.
 Computes `duration_active` (how long each alert has been firing).
@@ -290,8 +344,230 @@ alert_analysis(base_dir="...", group_by="alertname", agg="max")
 - `group_by` (Optional): Column(s) to group by. String or list.
 - `agg` (Optional): Aggregation type.
 - `sort_by` (Optional): Column to sort by (e.g., `duration_active_min`).
-- `limit` (Optional): Max rows to return.
+- `limit` (Optional): Max rows to return. **Use `0` to fetch ALL rows** (no limit).
+- `offset` (Optional): Skip first N rows (pagination). Default: 0.
 - `start_time` / `end_time` (Optional): Time range filter.
+
+**Response includes pagination metadata** (same format as event_analysis).
+
+**8. k8s_spec_change_analysis**
+
+Analyzes Kubernetes object spec changes over time. Detects and reports **meaningful** spec changes, filtering out timestamp-related churn (resourceVersion, managedFields, etc.).
+
+**Use Cases:**
+- Identify config drift (what changed in a deployment?)
+- Track rollouts (which specs changed during an incident window?)
+- Correlate incidents with changes (did a ConfigMap change just before the outage?)
+
+**Example 1: Find all spec changes**
+```python
+k8s_spec_change_analysis(k8s_objects_file="k8s_objects.tsv")
+# Returns entities sorted by change_count:
+# {
+#   "total_entities": 112,
+#   "entities_with_changes": [
+#     {"entity": "ConfigMap/flagd-config", "change_count": 1, "changes": [...]},
+#     {"entity": "Deployment/load-generator", "change_count": 1, "changes": [...]},
+#     ...
+#   ]
+# }
+```
+
+**Example 2: Changes to a specific deployment**
+```python
+k8s_spec_change_analysis(
+    k8s_objects_file="k8s_objects.tsv",
+    k8_object_name="Deployment/cart"
+)
+# Returns only changes for the cart deployment
+```
+
+**Example 3: Changes during incident window**
+```python
+k8s_spec_change_analysis(
+    k8s_objects_file="k8s_objects.tsv",
+    start_time="2025-12-01T21:20:00Z",
+    end_time="2025-12-01T21:30:00Z"
+)
+# Returns only spec changes within the time window
+```
+
+**Example 4: Pagination for large datasets**
+```python
+k8s_spec_change_analysis(
+    k8s_objects_file="k8s_objects.tsv",
+    limit=10,        # Return top 10 entities
+    offset=0         # Skip 0 entities
+)
+```
+
+**Output Format:**
+```json
+{
+  "total_entities": 112,
+  "returned_count": 4,
+  "entities_with_changes": [
+    {
+      "entity": "Deployment/load-generator",
+      "kind": "Deployment",
+      "name": "load-generator",
+      "first_timestamp": "2025-12-01 21:20:45",
+      "last_timestamp": "2025-12-01 21:25:44",
+      "observation_count": 2,
+      "duration_sec": 298.59,
+      "change_count": 1,
+      "changes": [
+        {
+          "timestamp": "2025-12-01 21:25:44",
+          "from_timestamp": "2025-12-01 21:20:45",
+          "changes": [
+            {"path": "spec.template.metadata.annotations.kubectl.kubernetes.io/restartedAt", "type": "added", "new": "2025-12-01T21:22:22Z"}
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Filtered Fields (churn prevention):**
+The tool automatically filters out these fields to avoid noisy "changes":
+- `resourceVersion`, `managedFields`, `generation`, `uid`
+- `creationTimestamp`, `lastTransitionTime`, `lastUpdateTime`
+- `status`, `containerStatuses`, `conditions`, `podIP`, `hostIP`
+- Annotations: `endpoints.kubernetes.io/last-change-trigger-time`, `kubectl.kubernetes.io/last-applied-configuration`
+
+**Arguments:**
+- `k8s_objects_file` (Required): Path to k8s_objects TSV file.
+- `k8_object_name` (Optional): Filter by specific object (`Kind/name` format).
+- `start_time` / `end_time` (Optional): Time range filter.
+- `limit` (Optional): Max entities to return (pagination).
+- `offset` (Optional): Skip first N entities (pagination). Default: 0.
+- `include_no_change` (Optional): Include entities with no spec changes. Default: false.
+
+**9. get_context_contract** ⭐ (Aggregation Tool)
+
+Aggregates **full operational context** for a K8s entity by calling multiple analysis tools internally. This is the recommended starting point for incident investigation.
+
+**What it returns:**
+1. **Dependencies** (via `topology_analysis`)
+2. **Events** for the entity (via `event_analysis`)
+3. **Alerts** related to the entity (via `alert_analysis`)
+4. **Trace error tree** (via `get_trace_error_tree`)
+5. **Metric anomalies** (via `get_metric_anomalies`)
+6. **Latest K8s object definition** (from k8s_objects file)
+7. **Spec changes** (via `k8s_spec_change_analysis`)
+8. **Dependency context** (events + spec changes for each dependency)
+
+**Dependency Traversal Strategy:**
+
+The tool discovers dependencies using a **"1 transitive hop"** strategy:
+
+```
+Entity (e.g., Service/ad)
+├── Direct deps (hop 0): calls, depends_on from entity + its backing pods
+│   └── Service/flagd, Service/otel-collector, ConfigMap/kube-root-ca.crt, ...
+│
+└── Transitive deps (hop 1): dependencies OF the direct deps
+    └── ConfigMap/flagd-config (because flagd depends on it)
+```
+
+- **Only functional edges** (`calls`, `depends_on`) are followed - NOT `contains`
+- **Pod-level dependencies** are included (e.g., Pod/ad → Service/flagd)
+- **ConfigMaps, Secrets, ServiceAccounts** are captured as infrastructure dependencies
+- This ensures you see `ConfigMap/flagd-config` when investigating `Service/ad`
+
+The output includes a `dependency_breakdown` showing direct vs transitive:
+```json
+{
+  "dependency_breakdown": {
+    "direct": ["Service/flagd", "Service/otel-collector", "ConfigMap/kube-root-ca.crt"],
+    "transitive": ["ConfigMap/flagd-config", "ConfigMap/otel-collector"]
+  }
+}
+```
+
+**Pagination:**
+- **Page 1**: Main entity context (all 7 sections above)
+- **Page 2+**: Dependency context (events + spec changes for `deps_per_page` dependencies)
+
+**Example 1: Get full context for a service**
+```python
+get_context_contract(
+    k8_object="Deployment/cart",
+    snapshot_dir="/path/to/snapshot",  # Contains k8s_events*.tsv, k8s_objects*.tsv, etc.
+    topology_file="/path/to/topology.json",  # Optional
+    page=1
+)
+# Returns:
+# {
+#   "entity": "Deployment/cart",
+#   "pagination": {"current_page": 1, "total_pages": 3, "total_dependencies": 5},
+#   "events": {"count": 12, "items": [...]},
+#   "alerts": {"total_alerts": 45, "related_to_entity": 3},
+#   "trace_errors": {...},
+#   "metric_anomalies": {...},
+#   "k8s_object_definition": {...},
+#   "spec_changes": {...},
+#   "dependencies": ["valkey-cart", "postgresql"]
+# }
+```
+
+**Example 2: With time window**
+```python
+get_context_contract(
+    k8_object="Service/frontend",
+    snapshot_dir="/path/to/snapshot",
+    start_time="2025-12-01T21:20:00Z",
+    end_time="2025-12-01T21:30:00Z",
+    page=1
+)
+# Returns context filtered to the incident window
+```
+
+**Example 3: Get dependency context (page 2)**
+```python
+get_context_contract(
+    k8_object="Deployment/cart",
+    snapshot_dir="/path/to/snapshot",
+    page=2,         # Page 2 = first batch of dependencies
+    deps_per_page=3  # 3 dependencies per page
+)
+# Returns:
+# {
+#   "entity": "Deployment/cart",
+#   "context_type": "dependencies",
+#   "dependencies_on_page": ["valkey-cart", "postgresql", "kafka"],
+#   "dependency_context": {
+#     "valkey-cart": {"events": {...}, "spec_changes": {...}},
+#     "postgresql": {"events": {...}, "spec_changes": {...}},
+#     "kafka": {"events": {...}, "spec_changes": {...}}
+#   }
+# }
+```
+
+**Snapshot Directory Structure:**
+The tool automatically finds these files in `snapshot_dir`:
+```
+snapshot_dir/
+├── k8s_events_*.tsv      # Events file
+├── k8s_objects_*.tsv     # Objects file
+├── otel_traces.tsv       # Traces file
+├── alerts/               # Alert JSON files
+│   ├── alerts_at_*.json
+│   └── ...
+└── metrics/              # Metric TSV files
+    ├── pod_*.tsv
+    └── service_*.tsv
+```
+
+**Arguments:**
+- `k8_object` (Required): K8s object in `Kind/name` format (e.g., `Deployment/cart`).
+- `snapshot_dir` (Required): Path to snapshot directory with data files.
+- `topology_file` (Optional): Path to topology JSON. If not provided, looks for `operational_topology.json` in snapshot_dir.
+- `start_time` / `end_time` (Optional): Time range filter.
+- `page` (Optional): Page number. Page 1 = main entity, Page 2+ = dependencies. Default: 1.
+- `deps_per_page` (Optional): Dependencies per page (for page >= 2). Default: 3.
 
 ---
 

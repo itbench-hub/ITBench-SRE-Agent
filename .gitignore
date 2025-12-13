@@ -94,3 +94,9 @@ Thumbs.db
 *.log
 *.tmp
 
+# Leaderboard results (generated data, large)
+leaderboard_results/
+
+# Cursor IDE
+.cursor/
+

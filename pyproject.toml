@@ -1,22 +1,18 @@
 [project]
-name = "sre-support-agent"
-version = "0.1.0"
-description = "SRE Support Agent - AI-powered incident investigation using LangGraph"
+name = "itbench-sre-agent"
+version = "0.2.0"
+description = "ITBench SRE Agent - AI-powered incident investigation for SRE benchmarks"
 requires-python = ">=3.12"
 dependencies = [
-    "langgraph>=0.0.1",
-    "langchain-openai>=0.0.1",
-    "langchain-core>=0.1.0",
-    "pydantic>=2.0.0",
-    "toml>=0.10.2",
-    "python-dotenv>=1.0.0",
-    "pyyaml>=6.0.0",
-    "openai>=1.0.0",
-    "asteval>=1.0.0",
+    # Judge dependencies
     "litellm>=1.80.7",
+    "pyyaml>=6.0.0",
+    "asteval>=1.0.0",
+    # MCP tools dependencies
     "mcp>=1.0.0",
     "pandas>=2.0.0",
-    "agent-analytics @ git+ssh://git@github.ibm.com/agent-analytics/sdk.git@release",
+    # Config parsing (Python 3.11+ has tomllib built-in, fallback for older)
+    "tomli>=2.0.0;python_version<'3.11'",
 ]
 
 [project.optional-dependencies]
@@ -27,8 +23,8 @@ dev = [
 ]
 
 [project.scripts]
-sre-support-agent = "sre_support_agent.main:main"
 zero = "zero.cli:main"
+itbench-leaderboard = "itbench_leaderboard.cli:main"
 
 [tool.black]
 line-length = 120
@@ -43,7 +39,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["sre_support_agent", "zero", "sre_tools"]
+packages = ["zero", "sre_tools", "itbench_judge", "itbench_leaderboard"]
 
 [tool.hatch.metadata]
 allow-direct-references = true

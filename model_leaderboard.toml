@@ -1,0 +1,85 @@
+# Model Leaderboard Configuration
+# Run with: python -m itbench_leaderboard --config model_leaderboard.toml
+
+# ============================================================================
+# Scenarios Configuration
+# ============================================================================
+
+# Path to the ITBench scenarios directory
+scenarios_dir = "./ITBench-Snapshots/snapshots/sre/v0.1-ca9707b2-8b70-468b-a8f9-9658438f80b1"
+
+# Output directory for leaderboard results
+# Structure: leaderboard_dir/{agent_name}/{scenario_name}/{run_id}/
+leaderboard_dir = "./leaderboard_results"
+
+# ============================================================================
+# Run Configuration
+# ============================================================================
+
+# Number of runs per scenario (for statistical significance)
+runs_per_scenario = 3
+
+# Concurrency settings
+concurrent = true
+max_workers = 3
+
+# Trace collection (OTEL)
+collect_traces = true
+
+# ============================================================================
+# Judge Configuration
+# ============================================================================
+# The judge evaluates agent outputs against ground truth.
+# API key is read from environment variable OR_API_KEY
+
+[judge]
+model = "openrouter/google/gemini-2.5-pro"
+provider = "openrouter"
+base_url = "https://openrouter.ai/api/v1"
+
+# ============================================================================
+# Agent Configurations
+# ============================================================================
+# Add agents to compare. Each agent runs on all scenarios.
+#
+# Required environment variables:
+#   - OR_API_KEY: OpenRouter API key
+#   - ETE_API_KEY: ETE LiteLLM Proxy API key
+#   - AZURE_OPENAI_API_KEY: Azure OpenAI API key
+
+[[agents]]
+name = "gpt-5.1-azure"
+model = "Azure/gpt-5.1-2025-11-13"
+provider = "ete"
+prompt_file = "./zero/zero-config/prompts/tap.md"
+# wire_api: "chat" (default, works with most models) or "responses" (OpenAI models only)
+wire_api = "responses"
+# Optional: extra variables for prompt substitution (in addition to SNAPSHOT_DIRS)
+# [agents.variables]
+# MY_VAR = "value"
+# Optional: user query to append to agent run
+user_query = ""
+
+# Uncomment to add more agents for comparison:
+
+# [[agents]]
+# name = "gemini-2.5-pro"
+# model = "google/gemini-2.5-pro"
+# provider = "openrouter"
+# prompt_file = "./zero/zero-config/prompts/tap.md"
+# wire_api = "chat"  # Gemini uses chat format
+# user_query = ""
+
+# [[agents]]
+# name = "claude-opus-4"
+# model = "anthropic/claude-opus-4"
+# provider = "openrouter"
+# prompt_file = "./zero/zero-config/prompts/tap.md"
+# wire_api = "chat"  # Claude uses chat format
+
+# [[agents]]
+# name = "o4-mini"
+# model = "openai/o4-mini"
+# provider = "openrouter"
+# prompt_file = "./zero/zero-config/prompts/tap.md"
+# wire_api = "responses"  # OpenAI models can use responses format

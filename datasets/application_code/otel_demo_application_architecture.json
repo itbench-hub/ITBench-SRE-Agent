@@ -1,0 +1,183 @@
+{
+    "name": "OpenTelemetry Demo",
+    "description": "A microservice-based distributed system intended to illustrate the implementation of OpenTelemetry in a near real-world environment (Astronomy Shop).",
+    "components": {
+      "services": [
+        {
+          "name": "frontend",
+          "language": "TypeScript",
+          "role": "Exposes an HTTP server to serve the website",
+          "framework": "Next.js"
+        },
+        {
+          "name": "frontend-proxy",
+          "language": "Envoy",
+          "role": "Ingress proxy for the frontend and collector",
+          "type": "Proxy"
+        },
+        {
+          "name": "ad-service",
+          "language": "Java",
+          "role": "Provides text ads based on context words",
+          "protocol": "gRPC"
+        },
+        {
+          "name": "cart-service",
+          "language": "C# (.NET)",
+          "role": "Stores and retrieves items in the user's shopping cart",
+          "protocol": "gRPC"
+        },
+        {
+          "name": "checkout-service",
+          "language": "Go",
+          "role": "Orchestrates the order processing (payment, shipping, email)",
+          "protocol": "gRPC"
+        },
+        {
+          "name": "currency-service",
+          "language": "C++",
+          "role": "Converts money amounts between currencies",
+          "protocol": "gRPC"
+        },
+        {
+          "name": "email-service",
+          "language": "Ruby",
+          "role": "Sends order confirmation emails (mock)",
+          "protocol": "gRPC"
+        },
+        {
+          "name": "fraud-detection-service",
+          "language": "Kotlin",
+          "role": "Analyzes incoming orders for fraud",
+          "protocol": "gRPC"
+        },
+        {
+          "name": "accounting-service",
+          "language": "C# (.NET)",
+          "role": "Processes incoming orders to calculate sales stats",
+          "protocol": "gRPC"
+        },
+        {
+          "name": "image-provider",
+          "language": "Nginx",
+          "role": "Serves product images",
+          "protocol": "HTTP"
+        },
+        {
+          "name": "load-generator",
+          "language": "Python",
+          "role": "Simulates user traffic",
+          "tool": "Locust"
+        },
+        {
+          "name": "payment-service",
+          "language": "JavaScript (Node.js)",
+          "role": "Charges credit cards (mock)",
+          "protocol": "gRPC"
+        },
+        {
+          "name": "product-catalog-service",
+          "language": "Go",
+          "role": "Provides list of products and search capabilities",
+          "protocol": "gRPC"
+        },
+        {
+          "name": "product-reviews-service",
+          "language": "Python",
+          "role": "Manages product reviews and ratings",
+          "protocol": "gRPC"
+        },
+        {
+          "name": "quote-service",
+          "language": "PHP",
+          "role": "Calculates shipping costs",
+          "protocol": "HTTP"
+        },
+        {
+          "name": "recommendation-service",
+          "language": "Python",
+          "role": "Provides product recommendations",
+          "protocol": "gRPC"
+        },
+        {
+          "name": "shipping-service",
+          "language": "Rust",
+          "role": "Provides shipping estimates and tracking",
+          "protocol": "gRPC"
+        },
+        {
+          "name": "flagd",
+          "language": "Go",
+          "role": "Feature flag evaluation engine",
+          "protocol": "gRPC/HTTP"
+        },
+        {
+          "name": "flagd-ui",
+          "language": "Elixir",
+          "role": "User interface for feature flags",
+          "protocol": "HTTP"
+        }
+      ],
+      "infrastructure": [
+        {
+          "name": "valkey",
+          "type": "Cache",
+          "description": "Stores cart data (replaced Redis)"
+        },
+        {
+          "name": "kafka",
+          "type": "Message Queue",
+          "description": "Handles order processing events"
+        },
+        {
+          "name": "postgresql",
+          "type": "Database",
+          "description": "Stores accounting data"
+        },
+        {
+          "name": "opentelemetry-collector",
+          "type": "Observability",
+          "description": "Collects, processes, and exports telemetry data"
+        },
+        {
+          "name": "jaeger",
+          "type": "Observability",
+          "description": "Distributed tracing backend"
+        },
+        {
+          "name": "prometheus",
+          "type": "Observability",
+          "description": "Metrics backend"
+        },
+        {
+          "name": "grafana",
+          "type": "Observability",
+          "description": "Visualization dashboard"
+        }
+      ]
+    },
+    "dependencies": [
+      { "source": "frontend", "target": "ad-service", "protocol": "gRPC" },
+      { "source": "frontend", "target": "cart-service", "protocol": "gRPC" },
+      { "source": "frontend", "target": "checkout-service", "protocol": "gRPC" },
+      { "source": "frontend", "target": "currency-service", "protocol": "gRPC" },
+      { "source": "frontend", "target": "product-catalog-service", "protocol": "gRPC" },
+      { "source": "frontend", "target": "recommendation-service", "protocol": "gRPC" },
+      { "source": "frontend", "target": "shipping-service", "protocol": "gRPC" },
+      { "source": "frontend", "target": "product-reviews-service", "protocol": "gRPC" },
+      { "source": "checkout-service", "target": "cart-service", "protocol": "gRPC" },
+      { "source": "checkout-service", "target": "currency-service", "protocol": "gRPC" },
+      { "source": "checkout-service", "target": "email-service", "protocol": "gRPC" },
+      { "source": "checkout-service", "target": "payment-service", "protocol": "gRPC" },
+      { "source": "checkout-service", "target": "product-catalog-service", "protocol": "gRPC" },
+      { "source": "checkout-service", "target": "shipping-service", "protocol": "gRPC" },
+      { "source": "checkout-service", "target": "kafka", "protocol": "TCP" },
+      { "source": "shipping-service", "target": "quote-service", "protocol": "HTTP" },
+      { "source": "recommendation-service", "target": "product-catalog-service", "protocol": "gRPC" },
+      { "source": "cart-service", "target": "valkey", "protocol": "TCP" },
+      { "source": "accounting-service", "target": "kafka", "type": "Consumer" },
+      { "source": "accounting-service", "target": "postgresql", "protocol": "TCP" },
+      { "source": "fraud-detection-service", "target": "kafka", "type": "Consumer" },
+      { "source": "load-generator", "target": "frontend-proxy", "protocol": "HTTP" }
+    ]
+  }

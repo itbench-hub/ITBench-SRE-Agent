@@ -1,17 +1,18 @@
 """
-Zero - A parameterized wrapper for running Codex CLI against incident snapshots.
+Zero - A minimal Codex wrapper for reproducible agent runs.
 
-This module provides a flexible interface to run the Codex agent with 
-customizable configuration for SRE incident investigation.
+Zero sets up a workspace with proper configuration, prompts, policies,
+and sandbox settings, then launches Codex with the workspace as CODEX_HOME.
 
 Usage:
-    python -m zero --session-dir /path/to/session --read-only-dir /path/to/scenario
-    python -m zero --help
+    zero --workspace /path/to/workspace --read-only-dir /path/to/data -- exec --full-auto "prompt"
+
+See `zero --help` for full usage.
 """
 
-__version__ = "0.1.0"
-__all__ = ["ZeroConfig", "CodexRunner", "run", "OtelTraceCollector"]
+__version__ = "0.2.0"
+__all__ = ["ZeroWorkspacePaths", "setup_workspace", "run_codex", "OtelTraceCollector"]
 
-from .config import ZeroConfig
-from .runner import CodexRunner, run
+from .config import ZeroWorkspacePaths, setup_workspace
+from .runner import run_codex
 from .tracing import OtelTraceCollector

@@ -226,7 +226,11 @@ def register_tools(server: Server) -> None:
                         },
                         "limit": {
                             "type": "integer",
-                            "description": "Optional: Max rows to return"
+                            "description": "Optional: Max rows to return. Use 0 to fetch all rows (no limit). Default: no limit."
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "description": "Optional: Skip first N rows (pagination). Default: 0"
                         },
                         "start_time": {
                             "type": "string",
@@ -287,7 +291,7 @@ def register_tools(server: Server) -> None:
                     "properties": {
                         "base_dir": {
                             "type": "string",
-                            "description": "Base directory containing alert JSON files"
+                            "description": "Directory containing alert JSON files, OR scenario directory (auto-detects 'alerts/' subdirectory)"
                         },
                         "filters": {
                              "type": "object",
@@ -310,7 +314,11 @@ def register_tools(server: Server) -> None:
                         },
                         "limit": {
                             "type": "integer",
-                            "description": "Optional: Max rows to return"
+                            "description": "Optional: Max rows to return. Use 0 to fetch all rows (no limit). Default: no limit."
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "description": "Optional: Skip first N rows (pagination). Default: 0"
                         },
                         "start_time": {
                             "type": "string",
@@ -322,6 +330,122 @@ def register_tools(server: Server) -> None:
                         }
                     },
                     "required": ["base_dir"]
+                }
+            ),
+            Tool(
+                name="alert_summary",
+                description="Provides a high-level summary of all alerts: alert type, affected entity, time range, duration, and frequency. "
+                            "Use this FIRST to get an overview before diving into specific alerts with alert_analysis. "
+                            "Returns: alertname, entity (service/pod), severity, state, first_seen, last_seen, duration_min, occurrence_count. "
+                            "Sorted by duration (longest-running alerts first).",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "base_dir": {
+                            "type": "string",
+                            "description": "Directory containing alert JSON files, OR scenario directory (auto-detects 'alerts/' subdirectory)"
+                        },
+                        "state_filter": {
+                            "type": "string",
+                            "description": "Optional: Filter by state ('firing', 'pending', 'inactive'). Default: show all."
+                        },
+                        "min_duration_min": {
+                            "type": "number",
+                            "description": "Optional: Only show alerts active for at least this many minutes"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Optional: Max alerts to return. Default: 50"
+                        }
+                    },
+                    "required": ["base_dir"]
+                }
+            ),
+            Tool(
+                name="k8s_spec_change_analysis",
+                description="Analyzes Kubernetes object spec changes over time. "
+                            "Detects and reports meaningful spec changes, filtering out timestamp-related churn. "
+                            "Groups by entity, computes diffs between consecutive specs, and reports duration. "
+                            "Example: Find all spec changes: k8s_objects_file='k8s_objects.tsv'. "
+                            "Example: Changes to a specific deployment: k8_object_name='Deployment/cart'. "
+                            "Example: Changes in time window: start_time='2025-12-01T21:00:00Z', end_time='2025-12-01T22:00:00Z'. "
+                            "Useful for: identifying config drift, tracking rollouts, correlating incidents with changes.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "k8s_objects_file": {
+                            "type": "string",
+                            "description": "Path to the k8s_objects TSV file"
+                        },
+                        "k8_object_name": {
+                            "type": "string",
+                            "description": "Optional: Filter by specific object (format 'Kind/name', e.g., 'Deployment/cart', 'Pod/frontend-xyz')"
+                        },
+                        "start_time": {
+                            "type": "string",
+                            "description": "Optional: Start timestamp (ISO 8601)"
+                        },
+                        "end_time": {
+                            "type": "string",
+                            "description": "Optional: End timestamp (ISO 8601). Requires start_time."
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Optional: Max number of entities with changes to return (pagination)"
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "description": "Optional: Skip first N entities (pagination). Default: 0"
+                        },
+                        "include_no_change": {
+                            "type": "boolean",
+                            "description": "Optional: Include entities with no spec changes (default: false)"
+                        }
+                    },
+                    "required": ["k8s_objects_file"]
+                }
+            ),
+            Tool(
+                name="get_context_contract",
+                description="Aggregates full operational context for a K8s entity by calling multiple analysis tools. "
+                            "Returns: events, alerts, trace errors, metric anomalies, K8s object definition, spec changes, "
+                            "and dependency context. Uses existing tools internally (topology_analysis, event_analysis, etc.). "
+                            "Example: Get full context for a service: k8_object='Service/cart', snapshot_dir='/path/to/snapshot'. "
+                            "Example: With time window: start_time='2025-12-01T21:00:00Z', end_time='2025-12-01T22:00:00Z'. "
+                            "Pagination: page=1 returns main entity context, page=2+ returns dependency context.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "k8_object": {
+                            "type": "string",
+                            "description": "K8s object in Kind/name format (e.g., 'Deployment/cart', 'Service/frontend', 'Pod/cart-xyz')"
+                        },
+                        "snapshot_dir": {
+                            "type": "string",
+                            "description": "Path to snapshot directory containing k8s_events*.tsv, k8s_objects*.tsv, otel_traces.tsv, alerts/, metrics/"
+                        },
+                        "topology_file": {
+                            "type": "string",
+                            "description": "Optional: Path to topology JSON (if not provided, will look for operational_topology.json in snapshot_dir or build one)"
+                        },
+                        "start_time": {
+                            "type": "string",
+                            "description": "Optional: Start timestamp (ISO 8601)"
+                        },
+                        "end_time": {
+                            "type": "string",
+                            "description": "Optional: End timestamp (ISO 8601)"
+                        },
+                        "page": {
+                            "type": "integer",
+                            "description": "Optional: Page number. Page 0 = ALL pages at once, Page 1 = main entity, Page 2+ = dependencies. Default: 1"
+                        },
+                        "deps_per_page": {
+                            "type": "integer",
+                            "description": "Optional: Number of dependencies per page (for page >= 2). Default: 3. Ignored if page=0."
+                        }
+                    },
+                    "required": ["k8_object", "snapshot_dir"]
                 }
             ),
         ]
@@ -344,6 +468,12 @@ def register_tools(server: Server) -> None:
             return await _get_trace_error_tree(arguments)
         elif name == "alert_analysis":
             return await _alert_analysis(arguments)
+        elif name == "alert_summary":
+            return await _alert_summary(arguments)
+        elif name == "k8s_spec_change_analysis":
+            return await _k8s_spec_change_analysis(arguments)
+        elif name == "get_context_contract":
+            return await _get_context_contract(arguments)
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -1427,8 +1557,13 @@ async def _event_analysis(args: dict[str, Any]) -> list[TextContent]:
     agg_type = args.get("agg", "count")
     sort_by = args.get("sort_by")
     limit = args.get("limit")
+    offset = args.get("offset", 0)
     start_time_str = args.get("start_time")
     end_time_str = args.get("end_time")
+    
+    # limit=0 means no limit (fetch all)
+    if limit == 0:
+        limit = None
     
     start_time = _parse_time(start_time_str) if start_time_str else None
     end_time = _parse_time(end_time_str) if end_time_str else None
@@ -1441,12 +1576,20 @@ async def _event_analysis(args: dict[str, Any]) -> list[TextContent]:
     except Exception as e:
         return [TextContent(type="text", text=f"Error reading events file: {e}")]
     
-    # Add deployment column (extracted from pod names in object_name)
+    # Add deployment column (extracted from pod/replicaset names in object_name)
     if 'object_name' in df.columns and 'object_kind' in df.columns:
         def extract_deployment(row):
-            if row.get('object_kind') == 'Pod':
-                return _extract_deployment_from_pod(str(row.get('object_name', '')))
-            return row.get('object_name', 'unknown')
+            obj_kind = row.get('object_kind', '')
+            obj_name = str(row.get('object_name', ''))
+            if obj_kind == 'Pod':
+                # Pod: <deployment>-<rs-hash>-<pod-hash>
+                return _extract_deployment_from_pod(obj_name)
+            elif obj_kind == 'ReplicaSet':
+                # ReplicaSet: <deployment>-<rs-hash>
+                parts = obj_name.rsplit("-", 1)
+                if len(parts) >= 2 and len(parts[-1]) >= 5:  # hash is typically 9-10 chars
+                    return parts[0]
+            return obj_name if obj_name else 'unknown'
         df['deployment'] = df.apply(extract_deployment, axis=1)
     
     # Apply filters
@@ -1505,7 +1648,11 @@ async def _event_analysis(args: dict[str, Any]) -> list[TextContent]:
         else:
             return [TextContent(type="text", text=f"Error: Unknown aggregation type '{agg_type}'. Use: count, first, last, nunique, list")]
         
-        # Apply limit
+        total_rows = len(grouped)
+        
+        # Apply offset and limit (pagination)
+        if offset > 0:
+            grouped = grouped.iloc[offset:]
         if limit:
             grouped = grouped.head(limit)
         
@@ -1514,7 +1661,15 @@ async def _event_analysis(args: dict[str, Any]) -> list[TextContent]:
             if pd.api.types.is_datetime64_any_dtype(grouped[col]):
                 grouped[col] = grouped[col].astype(str)
         
-        return [TextContent(type="text", text=grouped.to_json(orient='records', indent=2))]
+        # Include pagination metadata
+        result = {
+            "total_count": total_rows,
+            "offset": offset,
+            "limit": limit if limit else "all",
+            "returned_count": len(grouped),
+            "data": json.loads(grouped.to_json(orient='records'))
+        }
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
     
     # No group_by - return filtered data
     if sort_by and sort_by in df.columns:
@@ -1522,7 +1677,11 @@ async def _event_analysis(args: dict[str, Any]) -> list[TextContent]:
     elif time_col in df.columns:
         df = df.sort_values(time_col)
     
-    # Apply limit
+    total_rows = len(df)
+    
+    # Apply offset and limit (pagination)
+    if offset > 0:
+        df = df.iloc[offset:]
     if limit:
         df = df.head(limit)
     
@@ -1531,7 +1690,15 @@ async def _event_analysis(args: dict[str, Any]) -> list[TextContent]:
         if pd.api.types.is_datetime64_any_dtype(df[col]):
             df[col] = df[col].astype(str)
     
-    return [TextContent(type="text", text=df.to_json(orient='records', indent=2))]
+    # Include pagination metadata
+    result = {
+        "total_count": total_rows,
+        "offset": offset,
+        "limit": limit if limit else "all",
+        "returned_count": len(df),
+        "data": json.loads(df.to_json(orient='records'))
+    }
+    return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
 
 async def _get_trace_error_tree(args: dict[str, Any]) -> list[TextContent]:
@@ -1743,8 +1910,13 @@ async def _alert_analysis(args: dict[str, Any]) -> list[TextContent]:
     agg_type = args.get("agg", "count")
     sort_by = args.get("sort_by")
     limit = args.get("limit")
+    offset = args.get("offset", 0)
     start_time_str = args.get("start_time")
     end_time_str = args.get("end_time")
+    
+    # limit=0 means no limit (fetch all)
+    if limit == 0:
+        limit = None
     
     start_time = _parse_time(start_time_str) if start_time_str else None
     end_time = _parse_time(end_time_str) if end_time_str else None
@@ -1752,6 +1924,11 @@ async def _alert_analysis(args: dict[str, Any]) -> list[TextContent]:
     base_path = Path(base_dir)
     if not base_path.exists():
         return [TextContent(type="text", text=f"Alerts directory not found: {base_dir}")]
+    
+    # Auto-detect alerts/ subdirectory if base_path doesn't have JSON files directly
+    alerts_subdir = base_path / "alerts"
+    if alerts_subdir.is_dir() and not list(base_path.glob("*.json")):
+        base_path = alerts_subdir
     
     # Load all alerts from JSON files
     all_alerts = []
@@ -1885,7 +2062,11 @@ async def _alert_analysis(args: dict[str, Any]) -> list[TextContent]:
         else:
             return [TextContent(type="text", text=f"Error: Unknown aggregation '{agg_type}'. Use: count, first, last, sum, mean, max, min")]
         
-        # Apply limit
+        total_rows = len(grouped)
+        
+        # Apply offset and limit (pagination)
+        if offset > 0:
+            grouped = grouped.iloc[offset:]
         if limit:
             grouped = grouped.head(limit)
         
@@ -1895,7 +2076,15 @@ async def _alert_analysis(args: dict[str, Any]) -> list[TextContent]:
             if pd.api.types.is_datetime64_any_dtype(grouped[col]):
                 grouped[col] = grouped[col].astype(str)
         
-        return [TextContent(type="text", text=grouped.to_json(orient='records', indent=2))]
+        # Include pagination metadata
+        result = {
+            "total_count": total_rows,
+            "offset": offset,
+            "limit": limit if limit else "all",
+            "returned_count": len(grouped),
+            "data": json.loads(grouped.to_json(orient='records'))
+        }
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
     
     # No group_by - return filtered data
     if sort_by:
@@ -1906,7 +2095,11 @@ async def _alert_analysis(args: dict[str, Any]) -> list[TextContent]:
     elif time_col in df.columns:
         df = df.sort_values(time_col)
     
-    # Apply limit
+    total_rows = len(df)
+    
+    # Apply offset and limit (pagination)
+    if offset > 0:
+        df = df.iloc[offset:]
     if limit:
         df = df.head(limit)
     
@@ -1916,7 +2109,982 @@ async def _alert_analysis(args: dict[str, Any]) -> list[TextContent]:
         if pd.api.types.is_datetime64_any_dtype(df[col]):
             df[col] = df[col].astype(str)
     
-    return [TextContent(type="text", text=df.to_json(orient='records', indent=2))]
+    # Include pagination metadata
+    result = {
+        "total_count": total_rows,
+        "offset": offset,
+        "limit": limit if limit else "all",
+        "returned_count": len(df),
+        "data": json.loads(df.to_json(orient='records'))
+    }
+    return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+
+# =============================================================================
+# Alert Summary
+# =============================================================================
+
+async def _alert_summary(args: dict[str, Any]) -> list[TextContent]:
+    """Provide a high-level summary of all alerts."""
+    if pd is None:
+        return [TextContent(type="text", text="Error: pandas is required for this tool")]
+    
+    base_dir = args.get("base_dir", "")
+    state_filter = args.get("state_filter")
+    min_duration_min = args.get("min_duration_min")
+    limit = args.get("limit", 50)
+    
+    base_path = Path(base_dir)
+    if not base_path.exists():
+        return [TextContent(type="text", text=f"Alerts directory not found: {base_dir}")]
+    
+    # Auto-detect alerts/ subdirectory
+    alerts_subdir = base_path / "alerts"
+    if alerts_subdir.is_dir() and not list(base_path.glob("*.json")):
+        base_path = alerts_subdir
+    
+    # Load all alerts from JSON files, tracking file timestamps
+    all_alerts = []
+    file_times: dict[str, datetime] = {}  # Map alert fingerprint to file timestamps
+    
+    for json_file in sorted(base_path.glob("*.json")):
+        try:
+            data = read_json_file(json_file)
+            
+            # Extract timestamp from filename (e.g., alerts_in_alerting_state_2025-12-01T212502.573985Z.json)
+            file_ts = None
+            fname = json_file.stem
+            for part in fname.split('_'):
+                if part.startswith('20') and 'T' in part:
+                    try:
+                        # Parse ISO-like timestamp
+                        ts_str = part.replace('.', ':').rstrip('Z') + '+00:00'
+                        ts_str = ts_str[:19]  # Take YYYY-MM-DDTHH:MM:SS
+                        file_ts = datetime.fromisoformat(ts_str.replace(':', '', 2).replace('T', ' '))
+                    except Exception:
+                        pass
+            
+            if file_ts is None:
+                # Try to get from file modification time
+                file_ts = datetime.fromtimestamp(json_file.stat().st_mtime)
+            
+            # Handle nested structure
+            if isinstance(data, dict):
+                if 'data' in data and 'alerts' in data['data']:
+                    alerts_list = data['data']['alerts']
+                elif 'alerts' in data:
+                    alerts_list = data['alerts']
+                else:
+                    alerts_list = [data]
+            else:
+                alerts_list = data if isinstance(data, list) else [data]
+            
+            # Track each alert with file timestamp
+            for alert in alerts_list:
+                alert['_file_ts'] = file_ts
+                all_alerts.append(alert)
+                
+        except Exception:
+            pass
+    
+    if not all_alerts:
+        return [TextContent(type="text", text="[]")]
+    
+    # Build summary by grouping alerts
+    # Key: (alertname, entity, severity) -> {first_seen, last_seen, occurrences, state}
+    alert_summaries: dict[tuple, dict] = {}
+    
+    for alert in all_alerts:
+        labels = alert.get('labels', {})
+        alertname = labels.get('alertname', alert.get('alertname', 'Unknown'))
+        
+        # Determine entity (service, pod, deployment, etc.)
+        entity = (
+            labels.get('service_name') or 
+            labels.get('service') or 
+            labels.get('pod') or 
+            labels.get('deployment') or 
+            labels.get('instance') or 
+            labels.get('job') or
+            labels.get('namespace', 'cluster-wide')
+        )
+        
+        severity = labels.get('severity', 'unknown')
+        state = alert.get('state', 'unknown')
+        
+        # Get timing info
+        active_at = None
+        if 'activeAt' in alert:
+            try:
+                # Parse activeAt timestamp
+                ts = pd.to_datetime(alert['activeAt'])
+                active_at = ts.tz_localize(None) if ts.tzinfo is None else ts.tz_convert(None)
+                active_at = active_at.to_pydatetime()
+            except Exception:
+                pass
+        
+        file_ts = alert.get('_file_ts')
+        if file_ts and hasattr(file_ts, 'replace'):
+            file_ts = file_ts.replace(tzinfo=None) if hasattr(file_ts, 'tzinfo') and file_ts.tzinfo else file_ts
+        
+        key = (alertname, entity, severity)
+        
+        if key not in alert_summaries:
+            alert_summaries[key] = {
+                'alertname': alertname,
+                'entity': entity,
+                'severity': severity,
+                'state': state,
+                'first_seen': active_at or file_ts,
+                'last_seen': file_ts,
+                'occurrences': 1,
+                'states_seen': {state}
+            }
+        else:
+            summary = alert_summaries[key]
+            summary['occurrences'] += 1
+            summary['states_seen'].add(state)
+            
+            # Update time bounds
+            if active_at and (summary['first_seen'] is None or active_at < summary['first_seen']):
+                summary['first_seen'] = active_at
+            if file_ts and (summary['last_seen'] is None or file_ts > summary['last_seen']):
+                summary['last_seen'] = file_ts
+                summary['state'] = state  # Use latest state
+    
+    # Convert to list and compute duration
+    results = []
+    for key, summary in alert_summaries.items():
+        # Compute duration (ensure first_seen <= last_seen)
+        duration_min = None
+        first_seen = summary['first_seen']
+        last_seen = summary['last_seen']
+        
+        # Swap if first > last (can happen with activeAt timing quirks)
+        if first_seen and last_seen and first_seen > last_seen:
+            first_seen, last_seen = last_seen, first_seen
+        
+        if first_seen and last_seen:
+            try:
+                delta = last_seen - first_seen
+                duration_min = round(delta.total_seconds() / 60, 1)
+            except Exception:
+                pass
+        
+        results.append({
+            'alertname': summary['alertname'],
+            'entity': summary['entity'],
+            'severity': summary['severity'],
+            'state': summary['state'],
+            'first_seen': str(first_seen) if first_seen else None,
+            'last_seen': str(last_seen) if last_seen else None,
+            'duration_min': duration_min,
+            'occurrences': summary['occurrences']
+        })
+    
+    # Apply filters
+    if state_filter:
+        results = [r for r in results if r['state'] == state_filter]
+    
+    if min_duration_min is not None:
+        results = [r for r in results if r['duration_min'] is not None and r['duration_min'] >= min_duration_min]
+    
+    # Sort by duration (longest first), then by occurrences
+    results.sort(key=lambda x: (-(x['duration_min'] or 0), -x['occurrences']))
+    
+    # Apply limit
+    if limit:
+        results = results[:limit]
+    
+    return [TextContent(type="text", text=json.dumps(results, indent=2))]
+
+
+# =============================================================================
+# K8s Spec Change Analysis
+# =============================================================================
+
+# Fields to ignore when computing spec diffs (these cause "churn" without meaningful changes)
+_IGNORE_SPEC_FIELDS = {
+    "resourceVersion",
+    "managedFields",
+    "generation",
+    "uid",
+    "selfLink",
+    "creationTimestamp",
+    "time",
+    "lastTransitionTime",
+    "lastUpdateTime",
+    "lastProbeTime",
+    "lastHeartbeatTime",
+    "observedGeneration",
+    "containerStatuses",
+    "conditions",
+    "podIP",
+    "podIPs",
+    "hostIP",
+    "startTime",
+    "status",  # Status is often ephemeral
+}
+
+# Annotations that are timestamp-related
+_IGNORE_ANNOTATIONS = {
+    "endpoints.kubernetes.io/last-change-trigger-time",
+    "kubectl.kubernetes.io/last-applied-configuration",
+    "deployment.kubernetes.io/revision",
+}
+
+
+def _clean_spec_for_diff(obj: Any, path: str = "") -> Any:
+    """Recursively clean a spec object, removing fields that cause churn."""
+    if isinstance(obj, dict):
+        cleaned = {}
+        for key, value in obj.items():
+            # Skip explicitly ignored fields
+            if key in _IGNORE_SPEC_FIELDS:
+                continue
+            
+            # Skip timestamp-like keys
+            if any(ts in key.lower() for ts in ["time", "timestamp", "date"]):
+                continue
+            
+            # Handle annotations specially
+            if key == "annotations" and isinstance(value, dict):
+                filtered_annotations = {
+                    k: v for k, v in value.items() 
+                    if k not in _IGNORE_ANNOTATIONS and "time" not in k.lower()
+                }
+                if filtered_annotations:
+                    cleaned[key] = filtered_annotations
+                continue
+            
+            # Recurse
+            cleaned_value = _clean_spec_for_diff(value, f"{path}.{key}")
+            if cleaned_value is not None:
+                cleaned[key] = cleaned_value
+        
+        return cleaned if cleaned else None
+    
+    elif isinstance(obj, list):
+        cleaned_list = []
+        for item in obj:
+            cleaned_item = _clean_spec_for_diff(item, path)
+            if cleaned_item is not None:
+                cleaned_list.append(cleaned_item)
+        return cleaned_list if cleaned_list else None
+    
+    else:
+        return obj
+
+
+def _compute_diff(old: Any, new: Any, path: str = "") -> list[dict]:
+    """Compute differences between two objects recursively.
+    
+    Returns a list of changes: {"path": "...", "type": "added|removed|changed", "old": ..., "new": ...}
+    No truncation - full values are returned.
+    """
+    changes = []
+    
+    if type(old) != type(new):
+        changes.append({"path": path or "root", "type": "changed", "old": str(old), "new": str(new)})
+        return changes
+    
+    if isinstance(old, dict) and isinstance(new, dict):
+        all_keys = set(old.keys()) | set(new.keys())
+        for key in all_keys:
+            sub_path = f"{path}.{key}" if path else key
+            if key not in old:
+                changes.append({"path": sub_path, "type": "added", "new": str(new[key])})
+            elif key not in new:
+                changes.append({"path": sub_path, "type": "removed", "old": str(old[key])})
+            else:
+                changes.extend(_compute_diff(old[key], new[key], sub_path))
+    
+    elif isinstance(old, list) and isinstance(new, list):
+        # For lists, do a simple length/content comparison
+        if len(old) != len(new):
+            changes.append({"path": path, "type": "changed", "old": f"[{len(old)} items]", "new": f"[{len(new)} items]"})
+        else:
+            for i, (o, n) in enumerate(zip(old, new)):
+                changes.extend(_compute_diff(o, n, f"{path}[{i}]"))
+    
+    elif old != new:
+        changes.append({"path": path or "root", "type": "changed", "old": str(old), "new": str(new)})
+    
+    return changes
+
+
+async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
+    """Analyze K8s object spec changes over time.
+    
+    Groups by entity (kind/name), computes diffs between consecutive observations,
+    filters out timestamp-related churn, and reports meaningful spec changes with duration.
+    """
+    if pd is None:
+        return [TextContent(type="text", text="Error: pandas is required for this tool")]
+    
+    k8s_objects_file = args.get("k8s_objects_file", "")
+    k8_object_name = args.get("k8_object_name")  # Format: Kind/name
+    start_time_str = args.get("start_time")
+    end_time_str = args.get("end_time")
+    limit = args.get("limit")
+    offset = args.get("offset", 0)
+    include_no_change = args.get("include_no_change", False)
+    
+    start_time = _parse_time(start_time_str) if start_time_str else None
+    end_time = _parse_time(end_time_str) if end_time_str else None
+    
+    if not Path(k8s_objects_file).exists():
+        return [TextContent(type="text", text=f"K8s objects file not found: {k8s_objects_file}")]
+    
+    try:
+        df = pd.read_csv(k8s_objects_file, sep='\t')
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error reading k8s objects file: {e}")]
+    
+    # Create entity ID column (Kind/name format)
+    df['entity_id'] = df['object_kind'] + '/' + df['object_name']
+    
+    # Filter by specific object if provided
+    if k8_object_name:
+        # Support both exact match and case-insensitive partial match
+        mask = (df['entity_id'].str.lower() == k8_object_name.lower())
+        if not mask.any():
+            # Try partial match
+            mask = df['entity_id'].str.lower().str.contains(k8_object_name.lower(), na=False)
+        df = df[mask]
+        if df.empty:
+            return [TextContent(type="text", text=f"No objects matching '{k8_object_name}' found")]
+    
+    # Parse timestamp
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+    
+    # Filter by time range
+    if start_time:
+        df = df[df['timestamp'] >= pd.Timestamp(start_time).tz_localize(None)]
+    if end_time:
+        df = df[df['timestamp'] <= pd.Timestamp(end_time).tz_localize(None)]
+    
+    if df.empty:
+        return [TextContent(type="text", text="No data after applying time filters")]
+    
+    # Sort by entity and timestamp
+    df = df.sort_values(['entity_id', 'timestamp'])
+    
+    # Process each entity
+    results = []
+    entities = df['entity_id'].unique()
+    
+    for entity_id in entities:
+        entity_df = df[df['entity_id'] == entity_id].copy()
+        
+        if len(entity_df) == 0:
+            continue
+        
+        first_ts = entity_df['timestamp'].min()
+        last_ts = entity_df['timestamp'].max()
+        observation_count = len(entity_df)
+        
+        # Parse and clean specs
+        specs = []
+        for idx, row in entity_df.iterrows():
+            try:
+                body = json.loads(row['body'].replace('""', '"') if isinstance(row['body'], str) else '{}')
+                cleaned = _clean_spec_for_diff(body)
+                specs.append({
+                    'timestamp': row['timestamp'],
+                    'spec': cleaned
+                })
+            except (json.JSONDecodeError, TypeError):
+                continue
+        
+        if len(specs) < 2:
+            if include_no_change:
+                results.append({
+                    "entity": entity_id,
+                    "kind": entity_id.split('/')[0] if '/' in entity_id else "Unknown",
+                    "name": entity_id.split('/')[1] if '/' in entity_id else entity_id,
+                    "first_timestamp": str(first_ts),
+                    "last_timestamp": str(last_ts),
+                    "observation_count": observation_count,
+                    "change_count": 0,
+                    "duration_sec": (last_ts - first_ts).total_seconds() if pd.notna(first_ts) and pd.notna(last_ts) else 0,
+                    "changes": []
+                })
+            continue
+        
+        # Compute diffs between consecutive specs
+        all_changes = []
+        for i in range(1, len(specs)):
+            prev_spec = specs[i-1]['spec']
+            curr_spec = specs[i]['spec']
+            
+            if prev_spec == curr_spec:
+                continue
+            
+            diff = _compute_diff(prev_spec, curr_spec)
+            if diff:
+                all_changes.append({
+                    "timestamp": str(specs[i]['timestamp']),
+                    "from_timestamp": str(specs[i-1]['timestamp']),
+                    "changes": diff[:20]  # Limit changes per diff to avoid huge output
+                })
+        
+        if all_changes or include_no_change:
+            kind, name = entity_id.split('/', 1) if '/' in entity_id else ("Unknown", entity_id)
+            
+            # Compute total duration of observation
+            duration_sec = (last_ts - first_ts).total_seconds() if pd.notna(first_ts) and pd.notna(last_ts) else 0
+            
+            results.append({
+                "entity": entity_id,
+                "kind": kind,
+                "name": name,
+                "first_timestamp": str(first_ts),
+                "last_timestamp": str(last_ts),
+                "observation_count": observation_count,
+                "duration_sec": duration_sec,
+                "change_count": len(all_changes),
+                "changes": all_changes
+            })
+    
+    # Sort by change count (most changes first)
+    results.sort(key=lambda x: x['change_count'], reverse=True)
+    
+    # Apply pagination
+    total_count = len(results)
+    if offset:
+        results = results[offset:]
+    if limit:
+        results = results[:limit]
+    
+    # Build output
+    output = {
+        "total_entities": total_count,
+        "returned_count": len(results),
+        "offset": offset,
+        "limit": limit,
+        "entities_with_changes": results
+    }
+    
+    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+# =============================================================================
+# Get Context Contract - Aggregated Context Tool
+# =============================================================================
+
+def _find_scenario_files(scenario_dir: Path) -> dict[str, Optional[Path]]:
+    """Find common scenario files in a directory."""
+    files: dict[str, Optional[Path]] = {
+        "events_file": None,
+        "objects_file": None,
+        "traces_file": None,
+        "alerts_dir": None,
+        "metrics_dir": None,
+        "topology_file": None,
+    }
+    
+    # Find events file (k8s_events*.tsv)
+    for f in scenario_dir.glob("k8s_events*.tsv"):
+        files["events_file"] = f
+        break
+    
+    # Find objects file (k8s_objects*.tsv)
+    for f in scenario_dir.glob("k8s_objects*.tsv"):
+        files["objects_file"] = f
+        break
+    
+    # Find traces file
+    traces_path = scenario_dir / "otel_traces.tsv"
+    if traces_path.exists():
+        files["traces_file"] = traces_path
+    
+    # Find alerts directory
+    alerts_dir = scenario_dir / "alerts"
+    if alerts_dir.is_dir():
+        files["alerts_dir"] = alerts_dir
+    
+    # Find metrics directory
+    metrics_dir = scenario_dir / "metrics"
+    if metrics_dir.is_dir():
+        files["metrics_dir"] = metrics_dir
+    
+    # Find topology file
+    topo_path = scenario_dir / "operational_topology.json"
+    if topo_path.exists():
+        files["topology_file"] = topo_path
+    
+    return files
+
+
+def _get_latest_object_def(objects_file: Path, k8_object: str) -> Optional[dict]:
+    """Get the latest K8s object definition from objects TSV."""
+    if not objects_file or not objects_file.exists():
+        return None
+    
+    try:
+        df = pd.read_csv(objects_file, sep='\t')
+        df['entity_id'] = df['object_kind'] + '/' + df['object_name']
+        
+        # Filter by entity
+        mask = df['entity_id'].str.lower() == k8_object.lower()
+        if not mask.any():
+            # Try partial match
+            mask = df['entity_id'].str.lower().str.contains(k8_object.lower().split('/')[-1], na=False)
+        
+        entity_df = df[mask].copy()
+        if entity_df.empty:
+            return None
+        
+        # Get latest by timestamp
+        entity_df['timestamp'] = pd.to_datetime(entity_df['timestamp'], errors='coerce')
+        latest = entity_df.sort_values('timestamp').iloc[-1]
+        
+        try:
+            body = json.loads(latest['body'].replace('""', '"') if isinstance(latest['body'], str) else '{}')
+            return {
+                "entity": latest['entity_id'],
+                "timestamp": str(latest['timestamp']),
+                "definition": body
+            }
+        except (json.JSONDecodeError, TypeError):
+            return None
+    except Exception:
+        return None
+
+
+async def _get_context_contract(args: dict[str, Any]) -> list[TextContent]:
+    """Aggregate full operational context for a K8s entity.
+    
+    Calls multiple analysis tools internally to build a comprehensive context:
+    1. Dependencies (via topology_analysis)
+    2. Events (via event_analysis)
+    3. Alerts (via alert_analysis)
+    4. Trace errors (via get_trace_error_tree)
+    5. Metric anomalies (via get_metric_anomalies)
+    6. K8s object definition (latest from k8s_objects file)
+    7. Spec changes (via k8s_spec_change_analysis)
+    
+    Pagination:
+    - Page 1: Main entity context
+    - Page 2+: Dependency context (deps_per_page dependencies per page)
+    """
+    if pd is None:
+        return [TextContent(type="text", text="Error: pandas is required for this tool")]
+    
+    k8_object = args.get("k8_object", "")
+    snapshot_dir_str = args.get("snapshot_dir", "")
+    topology_file = args.get("topology_file")
+    start_time = args.get("start_time")
+    end_time = args.get("end_time")
+    page = args.get("page", 1)
+    deps_per_page = args.get("deps_per_page", 3)
+    
+    if not k8_object:
+        return [TextContent(type="text", text="Error: 'k8_object' is required")]
+    if not snapshot_dir_str:
+        return [TextContent(type="text", text="Error: 'snapshot_dir' is required")]
+    
+    snapshot_dir = Path(snapshot_dir_str)
+    if not snapshot_dir.is_dir():
+        return [TextContent(type="text", text=f"Error: snapshot_dir not found: {snapshot_dir}")]
+    
+    # Find snapshot files
+    files = _find_scenario_files(snapshot_dir)
+    
+    # Override topology file if provided
+    if topology_file:
+        files["topology_file"] = Path(topology_file)
+    
+    # Parse entity kind/name
+    if '/' in k8_object:
+        entity_kind, entity_name = k8_object.split('/', 1)
+    else:
+        entity_kind = "Unknown"
+        entity_name = k8_object
+    
+    result: dict[str, Any] = {
+        "entity": k8_object,
+        "kind": entity_kind,
+        "name": entity_name,
+        "page": page,
+        "snapshot_dir": str(snapshot_dir),
+        "time_window": {
+            "start": start_time,
+            "end": end_time
+        },
+        "files_found": {k: str(v) if v else None for k, v in files.items()},
+    }
+    
+    # ========== GET DEPENDENCIES (Always needed for pagination info) ==========
+    # Strategy: Direct deps (hop 0) + One transitive hop (hop 1)
+    # Only follow 'calls' and 'depends_on' edges, NOT 'contains'
+    # Note: depends_on relationships are often at the Pod level, so we also check
+    # the backing_infrastructure pods for their dependencies.
+    
+    def _extract_functional_deps(topo_data: dict) -> set:
+        """Extract functional dependencies (calls, depends_on) from topology data."""
+        deps = set()
+        
+        # Add callees (services this entity calls)
+        if "callees" in topo_data:
+            deps.update(topo_data["callees"])
+        
+        # Add from relationships_by_type (outgoing calls and depends_on)
+        if "relationships_by_type" in topo_data:
+            for rel_type, targets in topo_data["relationships_by_type"].items():
+                if "--calls-->" in rel_type or "--depends_on-->" in rel_type:
+                    deps.update(targets)
+        
+        return deps
+    
+    def _extract_pods_from_backing_infra(topo_data: dict) -> list[str]:
+        """Extract Pod IDs from backing_infrastructure strings."""
+        pods = []
+        for chain in topo_data.get("backing_infrastructure", []):
+            # Parse strings like "ReplicaSet/cart-xxx --contains--> Pod/cart-xxx-yyy"
+            if "--contains--> Pod/" in chain:
+                pod_part = chain.split("--contains--> ")[-1]
+                if pod_part.startswith("Pod/"):
+                    pods.append(pod_part)
+        return pods
+    
+    dependencies: list[str] = []
+    direct_deps: set[str] = set()
+    transitive_deps: set[str] = set()
+    
+    if files["topology_file"] and files["topology_file"].exists():
+        try:
+            # Get direct dependencies (hop 0)
+            topo_result = await _topology_analysis({
+                "topology_file": str(files["topology_file"]),
+                "entity": entity_name
+            })
+            topo_data = json.loads(topo_result[0].text)
+            
+            # Get deps from the entity itself (calls, depends_on)
+            direct_deps = _extract_functional_deps(topo_data)
+            
+            # Also get deps from the backing infrastructure pods
+            # (depends_on relationships are often at Pod level)
+            backing_pods = _extract_pods_from_backing_infra(topo_data)
+            for pod_id in backing_pods[:3]:  # Limit to first 3 pods to avoid explosion
+                try:
+                    pod_topo_result = await _topology_analysis({
+                        "topology_file": str(files["topology_file"]),
+                        "entity": pod_id
+                    })
+                    pod_topo_data = json.loads(pod_topo_result[0].text)
+                    pod_deps = _extract_functional_deps(pod_topo_data)
+                    direct_deps.update(pod_deps)
+                except Exception:
+                    pass
+            
+            # Get transitive dependencies (hop 1) - deps of our direct deps
+            for dep in list(direct_deps):
+                try:
+                    dep_topo_result = await _topology_analysis({
+                        "topology_file": str(files["topology_file"]),
+                        "entity": dep
+                    })
+                    dep_topo_data = json.loads(dep_topo_result[0].text)
+                    
+                    # Get this dep's dependencies (including from its pods)
+                    dep_deps = _extract_functional_deps(dep_topo_data)
+                    
+                    # Also check backing pods of this dependency
+                    dep_pods = _extract_pods_from_backing_infra(dep_topo_data)
+                    for pod_id in dep_pods[:2]:  # Limit to 2 pods per dep
+                        try:
+                            pod_topo_result = await _topology_analysis({
+                                "topology_file": str(files["topology_file"]),
+                                "entity": pod_id
+                            })
+                            pod_topo_data = json.loads(pod_topo_result[0].text)
+                            dep_deps.update(_extract_functional_deps(pod_topo_data))
+                        except Exception:
+                            pass
+                    
+                    # Add to transitive (excluding things we already have)
+                    for dd in dep_deps:
+                        if dd not in direct_deps and dd != entity_name:
+                            transitive_deps.add(dd)
+                except Exception:
+                    # If we can't analyze a dependency, skip it
+                    pass
+            
+            # Combine: direct deps first, then transitive
+            all_deps = direct_deps | transitive_deps
+            dependencies = sorted(list(all_deps))
+            
+            if page == 1 or page == 0:
+                result["topology"] = topo_data
+                result["dependency_breakdown"] = {
+                    "direct": sorted(list(direct_deps)),
+                    "transitive": sorted(list(transitive_deps))
+                }
+        except Exception as e:
+            result["topology_error"] = str(e)
+    
+    # Calculate pagination info
+    total_dep_pages = (len(dependencies) + deps_per_page - 1) // deps_per_page if dependencies else 0
+    total_pages = 1 + total_dep_pages  # Page 1 = main entity, Page 2+ = dependencies
+    
+    result["pagination"] = {
+        "current_page": page,
+        "total_pages": total_pages,
+        "total_dependencies": len(dependencies),
+        "deps_per_page": deps_per_page,
+        "all_pages": page == 0
+    }
+    
+    # ========== PAGE 0 or PAGE 1: MAIN ENTITY CONTEXT ==========
+    if page == 0 or page == 1:
+        result["context_type"] = "main_entity"
+        
+        # 1. Events for this entity
+        if files["events_file"]:
+            try:
+                event_args = {
+                    "events_file": str(files["events_file"]),
+                    "filters": {},
+                }
+                if start_time:
+                    event_args["start_time"] = start_time
+                if end_time:
+                    event_args["end_time"] = end_time
+                
+                # Filter by entity name (deployment extracted from pod names)
+                event_result = await _event_analysis({
+                    **event_args,
+                    "filters": {"deployment": entity_name} if entity_kind in ["Deployment", "Service", "App"] else {"object_name": entity_name}
+                })
+                events_data = json.loads(event_result[0].text)
+                result["events"] = {
+                    "count": len(events_data),
+                    "items": events_data,  # Return all events
+                    "truncated": False
+                }
+            except Exception as e:
+                result["events_error"] = str(e)
+        
+        # 2. Alerts
+        if files["alerts_dir"]:
+            try:
+                alert_args = {
+                    "base_dir": str(files["alerts_dir"]),
+                    "limit": 20
+                }
+                if start_time:
+                    alert_args["start_time"] = start_time
+                if end_time:
+                    alert_args["end_time"] = end_time
+                
+                alert_result = await _alert_analysis(alert_args)
+                alerts_data = json.loads(alert_result[0].text)
+                
+                # Filter alerts related to this entity
+                related_alerts = [
+                    a for a in alerts_data 
+                    if entity_name.lower() in str(a).lower()
+                ]
+                
+                result["alerts"] = {
+                    "total_alerts": len(alerts_data),
+                    "related_to_entity": len(related_alerts),
+                    "items": related_alerts[:10],
+                    "truncated": len(related_alerts) > 10
+                }
+            except Exception as e:
+                result["alerts_error"] = str(e)
+        
+        # 3. Trace error tree
+        if files["traces_file"]:
+            try:
+                trace_args = {
+                    "trace_file": str(files["traces_file"]),
+                    "service_name": entity_name
+                }
+                if start_time:
+                    trace_args["pivot_time"] = start_time
+                
+                trace_result = await _get_trace_error_tree(trace_args)
+                trace_data = json.loads(trace_result[0].text)
+                result["trace_errors"] = trace_data
+            except Exception as e:
+                result["trace_errors_error"] = str(e)
+        
+        # 4. Metric anomalies
+        if files["metrics_dir"]:
+            try:
+                # Find metric file for this entity
+                metric_files = list(files["metrics_dir"].glob(f"*{entity_name.lower()}*.tsv"))
+                if metric_files:
+                    anomaly_args = {
+                        "base_dir": str(files["metrics_dir"]),
+                        "k8_object_name": k8_object,
+                        "raw_content": False
+                    }
+                    if start_time:
+                        anomaly_args["start_time"] = start_time
+                    if end_time:
+                        anomaly_args["end_time"] = end_time
+                    
+                    anomaly_result = await _get_metric_anomalies(anomaly_args)
+                    anomaly_data = json.loads(anomaly_result[0].text)
+                    result["metric_anomalies"] = anomaly_data
+            except Exception as e:
+                result["metric_anomalies_error"] = str(e)
+        
+        # 5. Latest K8s object definition
+        if files["objects_file"]:
+            latest_def = _get_latest_object_def(files["objects_file"], k8_object)
+            if latest_def:
+                # Truncate large definitions
+                def_str = json.dumps(latest_def.get("definition", {}))
+                if len(def_str) > 2000:
+                    result["k8s_object_definition"] = {
+                        "entity": latest_def["entity"],
+                        "timestamp": latest_def["timestamp"],
+                        "definition_truncated": True,
+                        "definition_preview": def_str[:2000] + "..."
+                    }
+                else:
+                    result["k8s_object_definition"] = latest_def
+        
+        # 6. Spec changes
+        if files["objects_file"]:
+            try:
+                spec_args = {
+                    "k8s_objects_file": str(files["objects_file"]),
+                    "k8_object_name": k8_object
+                }
+                if start_time:
+                    spec_args["start_time"] = start_time
+                if end_time:
+                    spec_args["end_time"] = end_time
+                
+                spec_result = await _k8s_spec_change_analysis(spec_args)
+                spec_data = json.loads(spec_result[0].text)
+                result["spec_changes"] = spec_data
+            except Exception as e:
+                result["spec_changes_error"] = str(e)
+        
+        # 7. Dependencies list (for reference)
+        result["dependencies"] = dependencies
+        
+        # If page=0, also include ALL dependency context
+        if page == 0 and dependencies:
+            result["context_type"] = "all"
+            result["dependency_context"] = {}
+            
+            for dep in dependencies:
+                dep_context: dict[str, Any] = {"entity": dep}
+                
+                # Events for dependency
+                if files["events_file"]:
+                    try:
+                        event_args = {
+                            "events_file": str(files["events_file"]),
+                            "filters": {"deployment": dep} if not dep.startswith("Pod/") else {"object_name": dep.split("/")[-1]},
+                            "limit": 10
+                        }
+                        if start_time:
+                            event_args["start_time"] = start_time
+                        if end_time:
+                            event_args["end_time"] = end_time
+                        
+                        event_result = await _event_analysis(event_args)
+                        events_data = json.loads(event_result[0].text)
+                        dep_context["events"] = {
+                            "count": len(events_data),
+                            "items": events_data[:5]
+                        }
+                    except Exception as e:
+                        dep_context["events_error"] = str(e)
+                
+                # Spec changes for dependency
+                if files["objects_file"]:
+                    try:
+                        spec_args = {
+                            "k8s_objects_file": str(files["objects_file"]),
+                            "k8_object_name": dep
+                        }
+                        if start_time:
+                            spec_args["start_time"] = start_time
+                        if end_time:
+                            spec_args["end_time"] = end_time
+                        
+                        spec_result = await _k8s_spec_change_analysis(spec_args)
+                        spec_data = json.loads(spec_result[0].text)
+                        dep_context["spec_changes"] = spec_data
+                    except Exception as e:
+                        dep_context["spec_changes_error"] = str(e)
+                
+                result["dependency_context"][dep] = dep_context
+    
+    # ========== PAGE 2+: DEPENDENCY CONTEXT (paginated) ==========
+    elif page >= 2:
+        result["context_type"] = "dependencies"
+        
+        # Calculate which dependencies to show on this page
+        start_idx = (page - 2) * deps_per_page
+        end_idx = start_idx + deps_per_page
+        page_deps = dependencies[start_idx:end_idx]
+        
+        if not page_deps:
+            result["message"] = f"No dependencies on page {page}. Total pages: {total_pages}"
+            return [TextContent(type="text", text=json.dumps(result, indent=2))]
+        
+        result["dependencies_on_page"] = page_deps
+        result["dependency_context"] = {}
+        
+        for dep in page_deps:
+            dep_context: dict[str, Any] = {"entity": dep}
+            
+            # Events for dependency
+            if files["events_file"]:
+                try:
+                    event_args = {
+                        "events_file": str(files["events_file"]),
+                        "filters": {"deployment": dep} if not dep.startswith("Pod/") else {"object_name": dep.split("/")[-1]},
+                        "limit": 10
+                    }
+                    if start_time:
+                        event_args["start_time"] = start_time
+                    if end_time:
+                        event_args["end_time"] = end_time
+                    
+                    event_result = await _event_analysis(event_args)
+                    events_data = json.loads(event_result[0].text)
+                    dep_context["events"] = {
+                        "count": len(events_data),
+                        "items": events_data[:5]
+                    }
+                except Exception as e:
+                    dep_context["events_error"] = str(e)
+            
+            # Spec changes for dependency
+            if files["objects_file"]:
+                try:
+                    spec_args = {
+                        "k8s_objects_file": str(files["objects_file"]),
+                        "k8_object_name": dep
+                    }
+                    if start_time:
+                        spec_args["start_time"] = start_time
+                    if end_time:
+                        spec_args["end_time"] = end_time
+                    
+                    spec_result = await _k8s_spec_change_analysis(spec_args)
+                    spec_data = json.loads(spec_result[0].text)
+                    dep_context["spec_changes"] = spec_data
+                except Exception as e:
+                    dep_context["spec_changes_error"] = str(e)
+            
+            result["dependency_context"][dep] = dep_context
+    
+    return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
 
 # =============================================================================
@@ -1989,6 +3157,45 @@ def _cli_build_topology(args) -> int:
         return 1
 
 
+def _cli_get_context_contract(args) -> int:
+    """CLI handler for get_context_contract command."""
+    import asyncio
+    
+    try:
+        # Build arguments dict
+        arguments = {
+            "k8_object": args.k8_object,
+            "snapshot_dir": args.snapshot_dir,
+        }
+        if args.topology_file:
+            arguments["topology_file"] = args.topology_file
+        if args.start_time:
+            arguments["start_time"] = args.start_time
+        if args.end_time:
+            arguments["end_time"] = args.end_time
+        if args.page is not None:
+            arguments["page"] = args.page
+        if args.deps_per_page is not None:
+            arguments["deps_per_page"] = args.deps_per_page
+        
+        # Run async function
+        result = asyncio.run(_get_context_contract(arguments))
+        
+        # Print result
+        for content in result:
+            print(content.text)
+        
+        return 0
+    except FileNotFoundError as e:
+        print(f"✗ File not found: {e}")
+        return 1
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
 def main():
     """Command-line interface for SRE utility tools."""
     import argparse
@@ -2045,6 +3252,48 @@ Examples:
     )
     build_topo_parser.set_defaults(func=_cli_build_topology)
     
+    # get_context_contract subcommand
+    context_parser = subparsers.add_parser(
+        "get_context_contract",
+        help="Get full operational context for a K8s entity",
+        description="Aggregates events, alerts, traces, metrics, spec changes, and dependencies for an entity"
+    )
+    context_parser.add_argument(
+        "--k8-object", "-k",
+        required=True,
+        help="K8s object in Kind/name format (e.g., 'Deployment/cart', 'Service/frontend')"
+    )
+    context_parser.add_argument(
+        "--snapshot-dir", "-s",
+        required=True,
+        help="Path to snapshot directory containing k8s_events*.tsv, k8s_objects*.tsv, etc."
+    )
+    context_parser.add_argument(
+        "--topology-file", "-t",
+        help="Path to topology JSON (optional, will auto-build if not provided)"
+    )
+    context_parser.add_argument(
+        "--start-time",
+        help="Start timestamp (ISO 8601)"
+    )
+    context_parser.add_argument(
+        "--end-time",
+        help="End timestamp (ISO 8601)"
+    )
+    context_parser.add_argument(
+        "--page", "-p",
+        type=int,
+        default=1,
+        help="Page number: 0=all, 1=main entity, 2+=dependencies (default: 1)"
+    )
+    context_parser.add_argument(
+        "--deps-per-page",
+        type=int,
+        default=3,
+        help="Dependencies per page for page >= 2 (default: 3)"
+    )
+    context_parser.set_defaults(func=_cli_get_context_contract)
+    
     # Parse args
     args = parser.parse_args()
     
@@ -2052,13 +3301,16 @@ Examples:
     if args.list:
         print("Available tools:")
         print()
-        print("  build_topology      - Build operational topology from architecture and K8s objects")
-        print("  topology_analysis   - Analyze topology (dependencies, service context, infra hierarchy)")
-        print("  metric_analysis     - General metric analysis (filtering, grouping, math)")
-        print("  get_metric_anomalies- Focused anomaly detection")
-        print("  event_analysis      - Analyze K8s events (filter, group, aggregate)")
-        print("  get_trace_error_tree- Trace error analysis")
-        print("  alert_analysis      - Analyze alerts (filter, group, aggregate, duration)")
+        print("  build_topology         - Build operational topology from architecture and K8s objects")
+        print("  topology_analysis      - Analyze topology (dependencies, service context, infra hierarchy)")
+        print("  metric_analysis        - General metric analysis (filtering, grouping, math)")
+        print("  get_metric_anomalies   - Focused anomaly detection")
+        print("  event_analysis         - Analyze K8s events (filter, group, aggregate)")
+        print("  get_trace_error_tree   - Trace error analysis")
+        print("  alert_analysis         - Analyze alerts (filter, group, aggregate, duration)")
+        print("  alert_summary          - Summarize alerts by entity (counts, severity breakdown)")
+        print("  k8s_spec_change_analysis - Detect K8s spec changes (image, replicas, env, resources)")
+        print("  get_context_contract   - Full context for an entity (events, alerts, traces, metrics, deps)")
         print()
         print("Use '<tool> --help' for tool-specific options.")
         return 0

@@ -95,6 +95,18 @@ wire_api = "chat"  # Use "responses" only for openai/* models
 # query_params = { api-version = "2025-04-01-preview" }
 # wire_api = "responses"  # Azure OpenAI supports responses API
 
+# ============================================================================
+# LiteLLM Proxy Configuration (Example)
+# ============================================================================
+# Use this to connect to a self-hosted LiteLLM proxy server.
+# See: https://docs.litellm.ai/docs/proxy/quick_start
+
+# [model_providers.litellm_proxy]
+# name = "LiteLLM Proxy"
+# base_url = "http://localhost:4000"       # Your LiteLLM proxy URL
+# env_key = "LITELLM_API_KEY"              # Or use OPENAI_API_KEY
+# wire_api = "chat"                        # Use chat for most proxy setups
+
 # [otel]
 # OTEL tracing is configured automatically by Zero when --collect-traces is used.
 # If you want to enable it manually, use this format:

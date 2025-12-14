@@ -18,7 +18,7 @@ profile = "sre_support_engineer"
 # model = "aws/claude-opus-4-1"
 # model = "openai/gpt-5.1"
 # model = "google/gemini-3-pro-preview"
-model_provider = "ete"              # Use default OpenAI provider
+model_provider = "openrouter"              # Use default OpenAI provider
 
 # Reasoning configuration
 model_reasoning_effort = "medium"        # Use high reasoning for root cause analysis
@@ -75,7 +75,7 @@ args = ["-m", "sre_tools.cli.sre_utils"]
 name = "ETE LITELLM PROXY"
 base_url = "https://ete-litellm.ai-models.vpc-int.res.ibm.com"
 env_key = "ETE_API_KEY"
-wire_api = "responses"  # Use "responses" only for OpenAI models
+wire_api = "chat"  # Use "responses" only for OpenAI models
 
 [model_providers.openrouter]
 name = "OpenRouter"

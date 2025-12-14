@@ -21,11 +21,14 @@ leaderboard_dir = "./leaderboard_results"
 # ============================================================================
 
 # Number of runs per scenario (for statistical significance)
-runs_per_scenario = 3
+runs_per_scenario = 1
 
 # Concurrency settings
+# When concurrent=true, ALL experiments (scenarios × runs) run in parallel
+# up to max_workers limit. Agents are still processed sequentially to see trends.
+# Consider API rate limits when setting max_workers (typically 10-20 max).
 concurrent = true
-max_workers = 3
+max_workers = 10
 
 # Trace collection (OTEL)
 collect_traces = true
@@ -43,9 +46,9 @@ collect_traces = true
 #   - litellm_proxy: LITELLM_API_KEY or OPENAI_API_KEY
 
 [judge]
-model = "openrouter/google/gemini-2.5-pro"
-provider = "openrouter"
-base_url = "https://openrouter.ai/api/v1"
+model = "litellm_proxy/GCP/gemini-2.5-pro"
+provider = "litellm_proxy"
+base_url = "https://ete-litellm.ai-models.vpc-int.res.ibm.com"
 
 # --- Alternative Judge Configurations ---
 #
@@ -84,46 +87,50 @@ base_url = "https://openrouter.ai/api/v1"
 #   - ETE_API_KEY: ETE LiteLLM Proxy API key
 #   - AZURE_OPENAI_API_KEY: Azure OpenAI API key
 
-[[agents]]
-# --- Run Identifier (prompt + commit + model) ---
-prompt = "tap"                                    # Prompt identifier (e.g., "tap", "fs_code")
-model = "Azure/gpt-5.1-2025-11-13"                # Model name
-commit = ""                                       # Git commit ID (leave empty to auto-capture HEAD)
+# [[agents]]
+# # --- Run Identifier (prompt + commit + model) ---
+# prompt = "react with code"                                    # Prompt identifier (e.g., "tap", "fs_code")
+# commit = ""                                       # Git commit ID (leave empty to auto-capture HEAD)
+# model = "Azure/gpt-5.1-2025-11-13"                # Model name
 
-# --- Model Configuration ---
-provider = "ete"
-prompt_file = "./zero/zero-config/prompts/tap.md"
-# wire_api: "chat" (default, works with most models) or "responses" (OpenAI models only)
-wire_api = "responses"
-# Optional: extra variables for prompt substitution (in addition to SNAPSHOT_DIRS)
-# [agents.variables]
-# MY_VAR = "value"
-# Optional: user query to append to agent run
-user_query = ""
+# # --- Model Configuration ---
+# provider = "ete"
+# prompt_file = "./zero/zero-config/prompts/fs_code.md"
+# # wire_api: "chat" (default, works with most models) or "responses" (OpenAI models only)
+# wire_api = "responses"
+# # Optional: extra variables for prompt substitution (in addition to SNAPSHOT_DIRS)
+# # [agents.variables]
+# # MY_VAR = "value"
+# # Optional: user query to append to agent run
+# user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. Lets begin the investigation."
 
-# Uncomment to add more agents for comparison:
+# # Uncomment to add more agents for comparison:
+
+ [[agents]]
+ prompt = "react with code"  
+ name = "gemini-2.5-pro"
+ model = "google/gemini-2.5-pro"
+ provider = "openrouter"
+ commit = ""
+ prompt_file = "./zero/zero-config/prompts/fs_code.md"
+ wire_api = "chat"  # Gemini uses chat format
+ user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. Lets begin the investigation."
+
 
 # [[agents]]
-# prompt = "tap"
-# model = "google/gemini-2.5-pro"
-# commit = ""
-# provider = "openrouter"
-# prompt_file = "./zero/zero-config/prompts/tap.md"
-# wire_api = "chat"  # Gemini uses chat format
-# user_query = ""
-
-# [[agents]]
-# prompt = "fs_code"
+# prompt = "react with code"   
 # model = "anthropic/claude-opus-4"
 # commit = ""
 # provider = "openrouter"
 # prompt_file = "./zero/zero-config/prompts/fs_code.md"
 # wire_api = "chat"  # Claude uses chat format
+# user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. Lets begin the investigation."
 
 # [[agents]]
-# prompt = "tap"
-# model = "openai/o4-mini"
+# prompt = "react with code"  
 # commit = ""
-# provider = "openrouter"
-# prompt_file = "./zero/zero-config/prompts/tap.md"
+# model = "Azure/o4-mini"
+# provider = "ete"
+# prompt_file = "./zero/zero-config/prompts/fs_code.md"
 # wire_api = "responses"  # OpenAI models can use responses format
+# user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. Lets begin the investigation."

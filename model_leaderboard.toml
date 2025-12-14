@@ -13,7 +13,7 @@
 scenarios_dir = "./ITBench-Snapshots"
 
 # Output directory for leaderboard results
-# Structure: leaderboard_dir/{agent_name}/{scenario_name}/{run_id}/
+# Structure: leaderboard_dir/{prompt}_{model}_{commit}/{scenario}/{run_id}/
 leaderboard_dir = "./leaderboard_results"
 
 # ============================================================================
@@ -72,14 +72,25 @@ base_url = "https://openrouter.ai/api/v1"
 # ============================================================================
 # Add agents to compare. Each agent runs on all scenarios.
 #
+# A run is uniquely identified by the combination of:
+#   1. prompt   - prompt identifier (e.g., "tap", "fs_code")
+#   2. commit   - git commit ID (auto-captured at runtime if not specified)
+#   3. model    - model name
+#
+# Results are stored at: leaderboard_dir/{prompt}_{model}_{commit}/{scenario}/
+#
 # Required environment variables:
 #   - OR_API_KEY: OpenRouter API key
 #   - ETE_API_KEY: ETE LiteLLM Proxy API key
 #   - AZURE_OPENAI_API_KEY: Azure OpenAI API key
 
 [[agents]]
-name = "gpt-5.1-azure"
-model = "Azure/gpt-5.1-2025-11-13"
+# --- Run Identifier (prompt + commit + model) ---
+prompt = "tap"                                    # Prompt identifier (e.g., "tap", "fs_code")
+model = "Azure/gpt-5.1-2025-11-13"                # Model name
+commit = ""                                       # Git commit ID (leave empty to auto-capture HEAD)
+
+# --- Model Configuration ---
 provider = "ete"
 prompt_file = "./zero/zero-config/prompts/tap.md"
 # wire_api: "chat" (default, works with most models) or "responses" (OpenAI models only)
@@ -93,23 +104,26 @@ user_query = ""
 # Uncomment to add more agents for comparison:
 
 # [[agents]]
-# name = "gemini-2.5-pro"
+# prompt = "tap"
 # model = "google/gemini-2.5-pro"
+# commit = ""
 # provider = "openrouter"
 # prompt_file = "./zero/zero-config/prompts/tap.md"
 # wire_api = "chat"  # Gemini uses chat format
 # user_query = ""
 
 # [[agents]]
-# name = "claude-opus-4"
+# prompt = "fs_code"
 # model = "anthropic/claude-opus-4"
+# commit = ""
 # provider = "openrouter"
-# prompt_file = "./zero/zero-config/prompts/tap.md"
+# prompt_file = "./zero/zero-config/prompts/fs_code.md"
 # wire_api = "chat"  # Claude uses chat format
 
 # [[agents]]
-# name = "o4-mini"
+# prompt = "tap"
 # model = "openai/o4-mini"
+# commit = ""
 # provider = "openrouter"
 # prompt_file = "./zero/zero-config/prompts/tap.md"
 # wire_api = "responses"  # OpenAI models can use responses format

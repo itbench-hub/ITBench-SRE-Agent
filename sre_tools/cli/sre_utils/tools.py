@@ -553,6 +553,8 @@ class _TopologyBuilder:
 
 def _load_k8s_objects_for_topology(path: Path) -> list[dict[str, Any]]:
     """Load K8s objects from TSV file with body parsing."""
+    # Increase CSV field size limit for large K8s object bodies (e.g., ConfigMaps, Secrets)
+    csv.field_size_limit(10 * 1024 * 1024)  # 10MB limit
     rows = list(csv.DictReader(path.read_text().splitlines(), delimiter="\t"))
     objs = []
     for row in rows:
@@ -1932,16 +1934,46 @@ async def _alert_analysis(args: dict[str, Any]) -> list[TextContent]:
     
     # Load all alerts from JSON files
     all_alerts = []
-    file_timestamps = []  # Track when each file was captured
     
     for json_file in base_path.glob("*.json"):
         try:
             data = read_json_file(json_file)
             
-            # Extract file timestamp from filename or data
+            # Extract file timestamp from JSON data or filename
             file_ts = None
-            if 'timestamp' in data:
+            
+            # First try to get timestamp from JSON data
+            if isinstance(data, dict) and 'timestamp' in data:
                 file_ts = data['timestamp']
+            
+            # If not found, try to parse from filename
+            # Handles: alerts_at_2025-12-12T02-48-00.296587.json
+            #          alerts_in_alerting_state_2025-12-12T031408.978618Z.json
+            if file_ts is None:
+                fname = json_file.stem
+                for part in fname.split('_'):
+                    if part.startswith('20') and 'T' in part:
+                        try:
+                            # Clean up the timestamp part
+                            ts_part = part.rstrip('Z')
+                            # Handle format: 2025-12-12T02-48-00.296587 (hyphens in time)
+                            if '-' in ts_part[11:]:  # Check if time part has hyphens
+                                # Replace hyphens in time with colons: T02-48-00 -> T02:48:00
+                                date_part = ts_part[:10]  # 2025-12-12
+                                time_part = ts_part[11:].split('.')[0]  # 02-48-00
+                                time_part = time_part.replace('-', ':')  # 02:48:00
+                                ts_part = f"{date_part}T{time_part}"
+                            else:
+                                # Handle format: 2025-12-12T031408 (no separators in time)
+                                date_part = ts_part[:10]
+                                time_raw = ts_part[11:].split('.')[0].split(':')[0]  # Get just digits
+                                if len(time_raw) >= 6:
+                                    time_part = f"{time_raw[0:2]}:{time_raw[2:4]}:{time_raw[4:6]}"
+                                    ts_part = f"{date_part}T{time_part}"
+                            file_ts = ts_part
+                            break
+                        except Exception:
+                            pass
             
             # Handle nested structure: data.alerts or just alerts array
             if isinstance(data, dict):
@@ -1954,9 +1986,10 @@ async def _alert_analysis(args: dict[str, Any]) -> list[TextContent]:
             else:
                 alerts_list = data if isinstance(data, list) else [data]
             
-            # Add file timestamp to each alert for duration calculation
-            for alert in alerts_list:
-                alert['_file_timestamp'] = file_ts or datetime.now().isoformat()
+            # Add file timestamp to each alert for duration calculation (only if we have a valid timestamp)
+            if file_ts:
+                for alert in alerts_list:
+                    alert['_file_timestamp'] = file_ts
             
             all_alerts.extend(alerts_list)
         except Exception:
@@ -1968,18 +2001,23 @@ async def _alert_analysis(args: dict[str, Any]) -> list[TextContent]:
     # Normalize JSON to DataFrame (flattens nested labels/annotations)
     df = pd.json_normalize(all_alerts)
     
-    # Compute duration_active (how long alert has been firing)
+    # Compute duration_active (how long alert has been firing at the snapshot time)
     time_col = 'activeAt' if 'activeAt' in df.columns else 'startsAt'
     if time_col in df.columns and '_file_timestamp' in df.columns:
         df[time_col] = pd.to_datetime(df[time_col], errors='coerce', utc=True)
         df['_file_timestamp'] = pd.to_datetime(df['_file_timestamp'], errors='coerce', utc=True)
         
         # Remove timezone info for consistent comparison
-        df[time_col] = df[time_col].dt.tz_localize(None)
-        df['_file_timestamp'] = df['_file_timestamp'].dt.tz_localize(None)
+        if df[time_col].dt.tz is not None:
+            df[time_col] = df[time_col].dt.tz_localize(None)
+        if df['_file_timestamp'].dt.tz is not None:
+            df['_file_timestamp'] = df['_file_timestamp'].dt.tz_localize(None)
         
-        # Duration in minutes
+        # Duration in minutes (snapshot_time - activeAt)
         df['duration_active_min'] = (df['_file_timestamp'] - df[time_col]).dt.total_seconds() / 60
+        
+        # Set negative durations (invalid) to NaN
+        df.loc[df['duration_active_min'] < 0, 'duration_active_min'] = pd.NA
         df['duration_active_min'] = df['duration_active_min'].round(1)
         
         # Human-readable duration
@@ -2125,7 +2163,13 @@ async def _alert_analysis(args: dict[str, Any]) -> list[TextContent]:
 # =============================================================================
 
 async def _alert_summary(args: dict[str, Any]) -> list[TextContent]:
-    """Provide a high-level summary of all alerts."""
+    """Provide a high-level summary of all alerts.
+    
+    For each unique alert type (alertname + entity + severity), calculates:
+    - first_seen: earliest activeAt timestamp across all occurrences
+    - last_seen: latest activeAt timestamp across all occurrences
+    - duration_min: difference between last_seen and first_seen (the incident window)
+    """
     if pd is None:
         return [TextContent(type="text", text="Error: pandas is required for this tool")]
     
@@ -2143,30 +2187,12 @@ async def _alert_summary(args: dict[str, Any]) -> list[TextContent]:
     if alerts_subdir.is_dir() and not list(base_path.glob("*.json")):
         base_path = alerts_subdir
     
-    # Load all alerts from JSON files, tracking file timestamps
+    # Load all alerts from JSON files
     all_alerts = []
-    file_times: dict[str, datetime] = {}  # Map alert fingerprint to file timestamps
     
     for json_file in sorted(base_path.glob("*.json")):
         try:
             data = read_json_file(json_file)
-            
-            # Extract timestamp from filename (e.g., alerts_in_alerting_state_2025-12-01T212502.573985Z.json)
-            file_ts = None
-            fname = json_file.stem
-            for part in fname.split('_'):
-                if part.startswith('20') and 'T' in part:
-                    try:
-                        # Parse ISO-like timestamp
-                        ts_str = part.replace('.', ':').rstrip('Z') + '+00:00'
-                        ts_str = ts_str[:19]  # Take YYYY-MM-DDTHH:MM:SS
-                        file_ts = datetime.fromisoformat(ts_str.replace(':', '', 2).replace('T', ' '))
-                    except Exception:
-                        pass
-            
-            if file_ts is None:
-                # Try to get from file modification time
-                file_ts = datetime.fromtimestamp(json_file.stat().st_mtime)
             
             # Handle nested structure
             if isinstance(data, dict):
@@ -2179,10 +2205,7 @@ async def _alert_summary(args: dict[str, Any]) -> list[TextContent]:
             else:
                 alerts_list = data if isinstance(data, list) else [data]
             
-            # Track each alert with file timestamp
-            for alert in alerts_list:
-                alert['_file_ts'] = file_ts
-                all_alerts.append(alert)
+            all_alerts.extend(alerts_list)
                 
         except Exception:
             pass
@@ -2191,7 +2214,7 @@ async def _alert_summary(args: dict[str, Any]) -> list[TextContent]:
         return [TextContent(type="text", text="[]")]
     
     # Build summary by grouping alerts
-    # Key: (alertname, entity, severity) -> {first_seen, last_seen, occurrences, state}
+    # Key: (alertname, entity, severity) -> {active_at_times, occurrences, states_seen, ...}
     alert_summaries: dict[tuple, dict] = {}
     
     for alert in all_alerts:
@@ -2210,22 +2233,18 @@ async def _alert_summary(args: dict[str, Any]) -> list[TextContent]:
         )
         
         severity = labels.get('severity', 'unknown')
+        namespace = labels.get('namespace', 'unknown')
         state = alert.get('state', 'unknown')
         
-        # Get timing info
+        # Parse activeAt timestamp
         active_at = None
         if 'activeAt' in alert:
             try:
-                # Parse activeAt timestamp
                 ts = pd.to_datetime(alert['activeAt'])
                 active_at = ts.tz_localize(None) if ts.tzinfo is None else ts.tz_convert(None)
                 active_at = active_at.to_pydatetime()
             except Exception:
                 pass
-        
-        file_ts = alert.get('_file_ts')
-        if file_ts and hasattr(file_ts, 'replace'):
-            file_ts = file_ts.replace(tzinfo=None) if hasattr(file_ts, 'tzinfo') and file_ts.tzinfo else file_ts
         
         key = (alertname, entity, severity)
         
@@ -2234,48 +2253,49 @@ async def _alert_summary(args: dict[str, Any]) -> list[TextContent]:
                 'alertname': alertname,
                 'entity': entity,
                 'severity': severity,
-                'state': state,
-                'first_seen': active_at or file_ts,
-                'last_seen': file_ts,
-                'occurrences': 1,
-                'states_seen': {state}
+                'namespace': namespace,
+                'active_at_times': set(),  # Collect all activeAt timestamps
+                'occurrences': 0,
+                'states_seen': set(),
+                'latest_state': state,
             }
-        else:
-            summary = alert_summaries[key]
-            summary['occurrences'] += 1
-            summary['states_seen'].add(state)
-            
-            # Update time bounds
-            if active_at and (summary['first_seen'] is None or active_at < summary['first_seen']):
-                summary['first_seen'] = active_at
-            if file_ts and (summary['last_seen'] is None or file_ts > summary['last_seen']):
-                summary['last_seen'] = file_ts
-                summary['state'] = state  # Use latest state
+        
+        summary = alert_summaries[key]
+        summary['occurrences'] += 1
+        summary['states_seen'].add(state)
+        summary['latest_state'] = state  # Keep updating to get the latest state
+        
+        # Only track activeAt for alerts that are actively firing
+        if active_at and state == 'firing':
+            summary['active_at_times'].add(active_at)
     
-    # Convert to list and compute duration
+    # Convert to list with calculated durations
     results = []
     for key, summary in alert_summaries.items():
-        # Compute duration (ensure first_seen <= last_seen)
-        duration_min = None
-        first_seen = summary['first_seen']
-        last_seen = summary['last_seen']
+        active_times = sorted(summary['active_at_times'])
         
-        # Swap if first > last (can happen with activeAt timing quirks)
-        if first_seen and last_seen and first_seen > last_seen:
-            first_seen, last_seen = last_seen, first_seen
+        if active_times:
+            first_seen = active_times[0]
+            last_seen = active_times[-1]
+            # Duration = time span of activeAt timestamps (incident window)
+            duration_min = (last_seen - first_seen).total_seconds() / 60
+            duration_min = round(duration_min, 1)
+        else:
+            first_seen = None
+            last_seen = None
+            duration_min = None
         
-        if first_seen and last_seen:
-            try:
-                delta = last_seen - first_seen
-                duration_min = round(delta.total_seconds() / 60, 1)
-            except Exception:
-                pass
+        # Determine the effective state (prefer 'firing' if seen)
+        state = summary['latest_state']
+        if 'firing' in summary['states_seen']:
+            state = 'firing'
         
         results.append({
             'alertname': summary['alertname'],
             'entity': summary['entity'],
+            'namespace': summary['namespace'],
             'severity': summary['severity'],
-            'state': summary['state'],
+            'state': state,
             'first_seen': str(first_seen) if first_seen else None,
             'last_seen': str(last_seen) if last_seen else None,
             'duration_min': duration_min,

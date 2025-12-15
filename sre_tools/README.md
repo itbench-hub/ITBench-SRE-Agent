@@ -48,7 +48,7 @@ Provides tools for building operational topology graphs and analyzing observabil
 | `metric_analysis` | Analyze metrics with filtering, grouping, derived metrics |
 | `get_metric_anomalies` | Focused anomaly detection for metrics |
 | `event_analysis` | Analyze K8s events with filtering, grouping, aggregation |
-| `get_trace_error_tree` | Analyze traces and generate error tree with statistics |
+| `get_trace_error_tree` | Analyze traces with error tree, latency percentiles (p50/p90/p99), and pre/post comparison |
 | `alert_summary` | **Start here for alerts** - High-level summary: type, entity, duration, frequency |
 | `alert_analysis` | Analyze alerts with filtering, grouping, duration tracking |
 | `k8s_spec_change_analysis` | Track K8s object spec changes over time (config drift, rollouts) |
@@ -250,14 +250,77 @@ event_analysis(events_file="...", group_by="object_name", agg="first")
 
 **5. get_trace_error_tree**
 
-Analyzes traces to find error patterns. Returns a hierarchical tree of call paths aggregated by error rate and latency.
+Analyzes distributed traces to find **critical paths with regressions**. Returns a compact, actionable output focused on what's broken.
 
-**Recommended Use:** Use this to pinpoint where a distributed transaction is failing. The tree structure makes it easy to see if a frontend error is actually caused by a deep backend service failure (e.g., "Checkout path broken -> shipping quote failure -> email service 400").
+**Key Features:**
+- **Compact output**: `all_paths` shows service chains with traffic rates; `critical_paths` details only degraded paths
+- **Full lineage**: Shows upstream callers (who calls this service), not just downstream
+- **Threshold filtering**: Only paths exceeding error/latency thresholds are analyzed in detail
+- **Per-hop metrics**: Each service in a critical path shows traffic, error rate, and latency changes
+- **Root cause detection**: Identifies downstream service with highest error rate
 
-- `trace_file` (Required): Path to otel_traces TSV file.
-- `service_name` (Optional): Filter by service name.
-- `pivot_time` (Optional): Timestamp to compare stats before/after.
-- `delta_time` (Optional): Window size (default: "5m").
+**Example: Compare before/after an incident**
+```python
+get_trace_error_tree(
+    trace_file="otel_traces.tsv",
+    service_name="checkout",
+    pivot_time="2025-12-01T21:20:00Z",
+    delta_time="5m",
+    error_threshold_pct=10,    # Only show if error rate changed >10%
+    latency_threshold_pct=10   # Only show if latency changed >10%
+)
+```
+
+**Arguments:**
+- `trace_file` (Required): Path to OpenTelemetry traces TSV file.
+- `service_name` (Optional): Filter to traces that CONTAIN this service (shows full lineage).
+- `span_kind` (Optional): Filter spans by kind (`Client`, `Server`, `Internal`).
+- `pivot_time` (Highly recommended): Timestamp for before/after comparison (ISO 8601).
+- `delta_time` (Optional): Window size for comparison (default: "5m").
+- `error_threshold_pct` (Optional): Only detail paths with error change > threshold (default: 10).
+- `latency_threshold_pct` (Optional): Only detail paths with latency change > threshold (default: 10).
+
+**Output Structure:**
+
+```json
+{
+  "_description": {
+    "overview": "Critical path analysis - only significant regressions shown in detail",
+    "thresholds": {"error_rate_change_pct": 10, "latency_change_pct": 10},
+    "note": "Paths not in critical_paths are healthy."
+  },
+  "summary": {
+    "pre": {"trace_count": 205, "error_rate_pct": 8.08, "latency_p99_ms": 104786},
+    "post": {"trace_count": 526, "error_rate_pct": 16.31, "latency_p99_ms": 94081},
+    "delta": {"traffic_change_pct": 156.6, "error_rate_change_pct": 101.9}
+  },
+  "all_paths": [
+    "load-generator(3/s) → frontend-proxy(3/s) → frontend(6/s) → checkout(13/s) (CRITICAL)",
+    "load-generator(3/s) → frontend-proxy(3/s) → frontend(6/s) → checkout(13/s) → payment(1/s) (CRITICAL)",
+    "load-generator(3/s) → frontend-proxy(3/s) → frontend(6/s) → checkout(13/s) → cart(6/s) (WARNING)",
+    "load-generator(3/s) → frontend-proxy(3/s) → frontend(6/s) → checkout(13/s) → currency(2/s)"
+  ],
+  "critical_paths": [
+    {
+      "path": "load-generator → frontend-proxy → frontend → checkout",
+      "severity": "CRITICAL",
+      "hops": [
+        {"service": "load-generator", "traffic": "1/s → 3/s", "error_rate": "43% → 49%", "latency_p99": "2.3m → 2.0m"},
+        {"service": "frontend-proxy", "traffic": "0.89/s → 3/s", "error_rate": "51% → 58%", "latency_p99": "15.2s → 15.2s"},
+        {"service": "frontend", "traffic": "2/s → 6/s", "error_rate": "15% → 41%", "latency_p99": "1.7m → 1.9m"},
+        {"service": "checkout", "traffic": "5/s → 13/s", "error_rate": "3% → 14%", "latency_p99": "1.4m → 1.5m"}
+      ],
+      "root_cause_suspect": {"service": "frontend-proxy", "reason": "58% error rate"},
+      "sample_errors": ["connection timeout"]
+    }
+  ]
+}
+```
+
+**Reading the output:**
+1. Scan `all_paths` - paths marked (CRITICAL)/(WARNING) need attention
+2. Read `critical_paths` - each hop shows `pre → post` metrics to trace where degradation starts
+3. Check `root_cause_suspect` - the downstream service most likely causing the issue
 
 **6. alert_summary** ⭐ (Start here for alerts)
 

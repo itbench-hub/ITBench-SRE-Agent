@@ -18,10 +18,10 @@ profile = "sre_support_engineer"
 # model = "aws/claude-opus-4-1"
 # model = "openai/gpt-5.1"
 # model = "google/gemini-3-pro-preview"
-model_provider = "ete"              # Use default OpenAI provider
+model_provider = "openrouter"              # Use default OpenAI provider
 
 # Reasoning configuration
-model_reasoning_effort = "medium"        # Use high reasoning for root cause analysis
+model_reasoning_effort = "xhigh"        # Use high reasoning for root cause analysis
 # model_reasoning_summary = "detailed"   # Get detailed reasoning summaries
 
 # Sandbox policy - allow writing to workspace and output directory
@@ -84,7 +84,7 @@ wire_api = "responses"  # Use "responses" only for OpenAI models
 name = "openrouter"
 base_url = "https://openrouter.ai/api/v1"
 env_key = "OR_API_KEY"
-wire_api = "responses"  # Use "responses" only for openai/* models
+wire_api = "chat"  # Use "responses" only for openai/* models
 
 # ============================================================================
 # Azure OpenAI Configuration (Example)

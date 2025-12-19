@@ -9,6 +9,7 @@ asteval>=1.0.0
 # MCP Tools (SRE analysis tools)
 mcp>=1.0.0
 pandas>=2.0.0
+drain3>=0.9.11  # Log pattern mining (Drain algorithm)
 
 # Leaderboard (connection testing)
 requests>=2.28.0

@@ -467,6 +467,8 @@ k8s_spec_change_analysis(
 **Output Format:**
 ```json
 {
+  "reference_spec_file": "k8s_objects.tsv",
+  "input_format": "processed",
   "total_entities": 112,
   "returned_count": 4,
   "entities_with_changes": [
@@ -479,15 +481,26 @@ k8s_spec_change_analysis(
       "observation_count": 2,
       "duration_sec": 298.59,
       "change_count": 1,
+      "reference_spec": {
+        "timestamp": "2025-12-01 21:20:45",
+        "spec": {"apiVersion": "apps/v1", "kind": "Deployment"}
+      },
       "changes": [
         {
           "timestamp": "2025-12-01 21:25:44",
           "from_timestamp": "2025-12-01 21:20:45",
+          "changes_truncated": false,
+          "change_item_count": 1,
+          "change_item_total": 1,
           "changes": [
             {"path": "spec.template.metadata.annotations.kubectl.kubernetes.io/restartedAt", "type": "added", "new": "2025-12-01T21:22:22Z"}
           ]
         }
-      ]
+      ],
+      "change_items": [
+        {"timestamp": "2025-12-01 21:25:44", "from_timestamp": "2025-12-01 21:20:45", "path": "spec.template.metadata.annotations.kubectl.kubernetes.io/restartedAt", "type": "added", "new": "2025-12-01T21:22:22Z"}
+      ],
+      "change_item_count": 1
     }
   ]
 }
@@ -502,8 +515,19 @@ The tool automatically filters out these fields to avoid noisy "changes":
 
 **Arguments:**
 - `k8s_objects_file` (Required): Path to k8s_objects TSV file.
-- `k8_object_name` (Optional): Filter by specific object (`Kind/name` format).
+- `k8_object_name` (Optional): Filter by specific object (`Kind/name` format). For namespaced objects, the tool also emits entity IDs as `Kind/namespace/name`.
 - `start_time` / `end_time` (Optional): Time range filter.
+- `max_changes_per_diff` (Optional): Max change items to return per diff window. If omitted, returns all.
+- `include_reference_spec` (Optional): Include the baseline spec used for diffing. Default: true.
+- `include_flat_change_items` (Optional): Include `change_items` flat list. Default: true.
+- `time_basis` (Optional): `"observation"` or `"effective_update"`. Controls what timestamp is used for time window filtering.
+  - `"observation"` uses OTEL/log record time (`TimestampTime` / `timestamp` column).
+  - `"effective_update"` uses a best-effort update time extracted from the object (`max(managedFields[].time, restartedAt, ...)`) so changes can be attributed to the window even if they were *observed later* by periodic snapshots.
+  - **Default:** `"effective_update"` for raw OTEL inputs, `"observation"` for processed snapshot inputs.
+- `lifecycle_inference` (Optional): `"none"` or `"window"`. **Default:** `"none"` for raw OTEL `k8sobjectsreceiver` input (to avoid noisy inferred adds/removes), `"window"` for processed snapshots.
+- `lifecycle_scope` (Optional): `"global"` or `"per_kind"`. When lifecycle inference is enabled, controls whether add/remove inference uses the global dataset window or per-kind windows. **Default:** `"per_kind"` for raw OTEL input, `"global"` for processed snapshots.
+- `removal_grace_period_sec` (Optional): Hysteresis for inferred removals (requires the entity to be absent for at least this many seconds). **Default:** `300` for raw OTEL when lifecycle inference is enabled; otherwise `0`.
+- `removal_min_cycles` (Optional): Hysteresis for inferred removals (requires the entity to be absent across at least this many subsequent observation cycles). **Default:** `2` for raw OTEL when lifecycle inference is enabled; otherwise `0`.
 - `limit` (Optional): Max entities to return (pagination).
 - `offset` (Optional): Skip first N entities (pagination). Default: 0.
 - `include_no_change` (Optional): Include entities with no spec changes. Default: false.

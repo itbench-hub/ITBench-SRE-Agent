@@ -739,6 +739,43 @@ def _to_utc_timestamp(ts) -> "pd.Timestamp":
     else:
         return ts_pd.tz_convert('UTC')
 
+def _parse_k8s_timestamp(ts_str: str | None) -> "pd.Timestamp | None":
+    """Parse a Kubernetes metadata timestamp (ISO 8601 format like '2025-12-14T18:17:52Z').
+    
+    Returns a UTC-aware pandas Timestamp, or None if parsing fails.
+    """
+    if pd is None or not ts_str:
+        return None
+    try:
+        ts = pd.to_datetime(ts_str, errors="coerce", utc=True)
+        return ts if pd.notna(ts) else None
+    except Exception:
+        return None
+
+
+def _format_k8s_timestamp(ts: "pd.Timestamp | datetime | None") -> str | None:
+    """Format a timestamp to K8s-style ISO 8601 format ('2025-12-15T17:26:34Z').
+    
+    Returns None if input is None or invalid.
+    """
+    if ts is None:
+        return None
+    try:
+        if pd is not None and isinstance(ts, pd.Timestamp):
+            if pd.isna(ts):
+                return None
+            # Convert to UTC if timezone-aware, then format
+            if ts.tzinfo is not None:
+                ts = ts.tz_convert("UTC")
+            return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+        elif isinstance(ts, datetime):
+            return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+        else:
+            return None
+    except Exception:
+        return None
+
+
 def _parse_duration(duration_str: str) -> timedelta:
     """Parse duration string (e.g., '5m', '1h') to timedelta."""
     if not duration_str:
@@ -4202,22 +4239,40 @@ async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
                 "Unsupported k8s objects format: no timestamp column (TimestampTime/Timestamp/timestamp)"
             )
 
-        def _extract_kind_ns_name(raw: Any) -> tuple[str, str, str]:
-            """Extract kind/namespace/name from a JSON Body string."""
+        def _extract_k8s_metadata(raw: Any) -> tuple[str, str, str, Any, str, str]:
+            """Extract kind/namespace/name and K8s metadata from a JSON Body string.
+            
+            Returns: (kind, namespace, name, creationTimestamp, resourceVersion, deletionTimestamp)
+            
+            Using K8s metadata for reliable lifecycle detection:
+            - creationTimestamp: when the object was created (reliable for additions)
+            - resourceVersion: changes when object is modified (reliable for modifications)
+            - deletionTimestamp: set when object is being deleted (reliable for deletions)
+            """
             obj = _parse_k8s_body_json(raw)
             if not isinstance(obj, dict):
-                return ("", "", "")
+                return ("", "", "", None, "", "")
             kind = obj.get("kind", "") or ""
             meta = obj.get("metadata") or {}
             name = meta.get("name", "") or ""
             namespace = meta.get("namespace", "") or ""
-            return (kind, namespace, name)
+            # Extract K8s metadata for lifecycle detection
+            creation_ts = _parse_k8s_timestamp(meta.get("creationTimestamp"))
+            resource_version = str(meta.get("resourceVersion", "") or "")
+            deletion_ts = meta.get("deletionTimestamp") or ""
+            return (kind, namespace, name, creation_ts, resource_version, deletion_ts)
 
-        extracted = df[body_col].apply(lambda x: pd.Series(_extract_kind_ns_name(x)))
-        extracted.columns = ["object_kind", "object_namespace", "object_name"]
+        extracted = df[body_col].apply(lambda x: pd.Series(_extract_k8s_metadata(x)))
+        extracted.columns = [
+            "object_kind", "object_namespace", "object_name",
+            "k8s_creation_ts", "k8s_resource_version", "k8s_deletion_ts"
+        ]
         df["object_kind"] = extracted["object_kind"]
         df["object_namespace"] = extracted["object_namespace"]
         df["object_name"] = extracted["object_name"]
+        df["k8s_creation_ts"] = extracted["k8s_creation_ts"]
+        df["k8s_resource_version"] = extracted["k8s_resource_version"]
+        df["k8s_deletion_ts"] = extracted["k8s_deletion_ts"]
         df["body"] = df[body_col].astype(str)
         df["timestamp"] = pd.to_datetime(df[ts_src], errors="coerce", utc=True)
 
@@ -4253,6 +4308,26 @@ async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
         + "/"
         + df.loc[_ns_mask, "object_name"]
     )
+    
+    # Ensure K8s metadata columns exist for both formats.
+    # For raw OTEL, these are extracted above. For processed format, extract now.
+    if "k8s_creation_ts" not in df.columns:
+        def _extract_k8s_meta_from_body(raw: Any) -> tuple[Any, str, str]:
+            """Extract K8s metadata (creationTimestamp, resourceVersion, deletionTimestamp) from body."""
+            obj = _parse_k8s_body_json(raw)
+            if not isinstance(obj, dict):
+                return (None, "", "")
+            meta = obj.get("metadata") or {}
+            creation_ts = _parse_k8s_timestamp(meta.get("creationTimestamp"))
+            resource_version = str(meta.get("resourceVersion", "") or "")
+            deletion_ts = meta.get("deletionTimestamp") or ""
+            return (creation_ts, resource_version, deletion_ts)
+        
+        meta_extracted = df["body"].apply(lambda x: pd.Series(_extract_k8s_meta_from_body(x)))
+        meta_extracted.columns = ["k8s_creation_ts", "k8s_resource_version", "k8s_deletion_ts"]
+        df["k8s_creation_ts"] = meta_extracted["k8s_creation_ts"]
+        df["k8s_resource_version"] = meta_extracted["k8s_resource_version"]
+        df["k8s_deletion_ts"] = meta_extracted["k8s_deletion_ts"]
     
     # Filter by specific object if provided
     if k8_object_name:
@@ -4296,22 +4371,33 @@ async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
         return _json_error(f"Unsupported time_basis: {time_basis}. Expected 'observation' or 'effective_update'")
 
     # Resolve lifecycle inference defaults now that we know the input format.
+    #
+    # Lifecycle inference modes:
+    # - "none": No lifecycle detection (only spec diffs between observations)
+    # - "window": Infer additions/removals from observation timing (noisy for OTEL data)
+    # - "k8s_metadata": Use K8s metadata for reliable lifecycle detection (RECOMMENDED):
+    #   * Additions: creationTimestamp falls within investigation window (start_time, end_time)
+    #   * Deletions: deletionTimestamp is set on the object
+    #   * Modifications: resourceVersion changed between observations
     lifecycle_inference = lifecycle_inference_arg
     lifecycle_scope = lifecycle_scope_arg
     if lifecycle_inference is None:
-        lifecycle_inference = "none" if is_raw_otel else "window"
+        # Default to k8s_metadata for raw OTEL (reliable), window for processed format (historical behavior)
+        lifecycle_inference = "k8s_metadata" if is_raw_otel else "window"
+    if lifecycle_inference not in {"none", "window", "k8s_metadata"}:
+        return _json_error(f"Unsupported lifecycle_inference: {lifecycle_inference}. Expected 'none', 'window', or 'k8s_metadata'")
     if lifecycle_scope is None:
         lifecycle_scope = "per_kind" if is_raw_otel else "global"
 
-    # Hysteresis defaults:
+    # Hysteresis defaults (only used for "window" mode):
     # - Processed format keeps historical behavior (no grace/cycle gating by default).
-    # - Raw OTEL: if lifecycle inference is enabled, require a gap and multiple subsequent cycles.
+    # - Raw OTEL with "window" mode: require a gap and multiple subsequent cycles.
     if removal_grace_period_sec_arg is None:
-        removal_grace_period_sec = 300 if (is_raw_otel and lifecycle_inference != "none") else 0
+        removal_grace_period_sec = 300 if (is_raw_otel and lifecycle_inference == "window") else 0
     else:
         removal_grace_period_sec = int(removal_grace_period_sec_arg)
     if removal_min_cycles_arg is None:
-        removal_min_cycles = 2 if (is_raw_otel and lifecycle_inference != "none") else 0
+        removal_min_cycles = 2 if (is_raw_otel and lifecycle_inference == "window") else 0
     else:
         removal_min_cycles = int(removal_min_cycles_arg)
     
@@ -4373,9 +4459,51 @@ async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
         scope_max_ts = kind_max_ts.get(entity_kind, global_max_ts) if lifecycle_scope == "per_kind" else global_max_ts
         scope_ts_list = kind_unique_ts.get(entity_kind, all_unique_ts) if lifecycle_scope == "per_kind" else all_unique_ts
 
+        # Extract K8s metadata from the entity's observations
+        k8s_creation_ts = entity_df["k8s_creation_ts"].dropna().iloc[0] if "k8s_creation_ts" in entity_df.columns and not entity_df["k8s_creation_ts"].dropna().empty else None
+        k8s_deletion_ts_vals = entity_df["k8s_deletion_ts"].dropna().unique() if "k8s_deletion_ts" in entity_df.columns else []
+        k8s_deletion_ts_set = any(v and str(v).strip() for v in k8s_deletion_ts_vals)
+        k8s_resource_versions = entity_df["k8s_resource_version"].dropna().unique().tolist() if "k8s_resource_version" in entity_df.columns else []
+        k8s_rv_changed = len(set(str(rv) for rv in k8s_resource_versions if rv)) > 1
+
         inferred_added = False
         inferred_removed = False
-        if lifecycle_inference != "none":
+        metadata_added = False
+        metadata_removed = False
+        metadata_modified = False
+        creation_ts_str: str | None = None
+        deletion_ts_str: str | None = None
+
+        if lifecycle_inference == "k8s_metadata":
+            # K8s metadata-based lifecycle detection (reliable, not affected by OTEL timing noise)
+            # Addition: creationTimestamp falls within investigation window
+            if k8s_creation_ts is not None and pd.notna(k8s_creation_ts):
+                creation_ts_str = _format_k8s_timestamp(k8s_creation_ts)
+                if start_time is not None and end_time is not None:
+                    start_ts = _to_utc_timestamp(start_time)
+                    end_ts = _to_utc_timestamp(end_time)
+                    metadata_added = start_ts <= k8s_creation_ts <= end_ts
+                elif start_time is not None:
+                    start_ts = _to_utc_timestamp(start_time)
+                    metadata_added = k8s_creation_ts >= start_ts
+                elif end_time is not None:
+                    end_ts = _to_utc_timestamp(end_time)
+                    metadata_added = k8s_creation_ts <= end_ts
+            
+            # Deletion: deletionTimestamp is set
+            if k8s_deletion_ts_set:
+                metadata_removed = True
+                # Get the actual deletion timestamp value for evidence
+                for v in k8s_deletion_ts_vals:
+                    if v and str(v).strip():
+                        deletion_ts_str = str(v).strip()
+                        break
+            
+            # Modification: resourceVersion changed between observations
+            metadata_modified = k8s_rv_changed
+        
+        elif lifecycle_inference == "window":
+            # Observation-based lifecycle inference (legacy, can be noisy for OTEL data)
             inferred_added = (
                 pd.notna(first_ts)
                 and pd.notna(scope_min_ts)
@@ -4425,11 +4553,35 @@ async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
         deletion_ts = last_meta.get("deletionTimestamp")
         deletion_confirmed = deletion_ts is not None and deletion_ts != ""
         
-        # Synthetic lifecycle changes (inferred from the window bounds).
-        # This allows surfacing objects that were created/deleted during the window,
+        # Lifecycle changes: additions, deletions, and resourceVersion modifications.
+        # This allows surfacing objects that were created/deleted/modified during the window,
         # even if we only captured one snapshot or there was no spec diff.
         lifecycle_changes: list[dict[str, Any]] = []
-        if inferred_added and pd.notna(first_ts):
+        
+        # Handle additions
+        if metadata_added and creation_ts_str:
+            # K8s metadata-based: creationTimestamp is within investigation window
+            lifecycle_changes.append({
+                "timestamp": creation_ts_str,
+                "from_timestamp": None,
+                "changes_truncated": False,
+                "change_item_count": 1,
+                "change_item_total": 1,
+                "changes": [{
+                    "path": "entity",
+                    "type": "entity_added",
+                    "new": entity_id,
+                    "inferred": False,
+                    "source": "k8s_metadata",
+                    "evidence": {
+                        "creationTimestamp": creation_ts_str,
+                        "investigation_start": _format_k8s_timestamp(start_time) if start_time else None,
+                        "investigation_end": _format_k8s_timestamp(end_time) if end_time else None,
+                    },
+                }],
+            })
+        elif inferred_added and pd.notna(first_ts):
+            # Observation-based (window mode): first observed after window start
             lifecycle_changes.append({
                 "timestamp": str(first_ts),
                 "from_timestamp": None,
@@ -4441,7 +4593,7 @@ async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
                     "type": "entity_added",
                     "new": entity_id,
                     "inferred": True,
-                    "inferred_scope": "window",
+                    "source": "observation_timing",
                     "evidence": {
                         "first_seen": str(first_ts),
                         "window_first_seen": str(global_min_ts),
@@ -4449,9 +4601,31 @@ async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
                     },
                 }],
             })
-        # Surface deletions even when lifecycle inference is disabled (raw OTEL default),
-        # but treat "removed" as "no longer observed" unless we have deletion evidence.
-        if (inferred_removed or deletion_confirmed) and pd.notna(last_ts):
+        
+        # Handle deletions
+        if metadata_removed and deletion_ts_str:
+            # K8s metadata-based: deletionTimestamp is set
+            lifecycle_changes.append({
+                "timestamp": deletion_ts_str,
+                "from_timestamp": None,
+                "changes_truncated": False,
+                "change_item_count": 1,
+                "change_item_total": 1,
+                "changes": [{
+                    "path": "entity",
+                    "type": "entity_removed",
+                    "old": entity_id,
+                    "inferred": False,
+                    "confirmed": True,
+                    "source": "k8s_metadata",
+                    "reason": "deletionTimestamp",
+                    "evidence": {
+                        "deletionTimestamp": deletion_ts_str,
+                    },
+                }],
+            })
+        elif (inferred_removed or deletion_confirmed) and pd.notna(last_ts):
+            # Observation-based or legacy deletion detection
             lifecycle_changes.append({
                 "timestamp": str(last_ts),
                 "from_timestamp": None,
@@ -4464,13 +4638,36 @@ async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
                     "old": entity_id,
                     "inferred": not deletion_confirmed,
                     "confirmed": bool(deletion_confirmed),
+                    "source": "observation_timing" if inferred_removed else "k8s_metadata",
                     "reason": "deletionTimestamp" if deletion_confirmed else "not_observed",
-                    "inferred_scope": lifecycle_scope,
                     "evidence": {
                         "last_seen": str(last_ts),
                         "window_first_seen": str(scope_min_ts),
                         "window_last_seen": str(scope_max_ts),
                         "deletionTimestamp": deletion_ts,
+                    },
+                }],
+            })
+        
+        # Handle resourceVersion modifications (k8s_metadata mode only)
+        if metadata_modified and lifecycle_inference == "k8s_metadata":
+            # resourceVersion changed between observations - this is a real modification
+            lifecycle_changes.append({
+                "timestamp": _format_k8s_timestamp(last_ts) if pd.notna(last_ts) else str(last_ts),
+                "from_timestamp": _format_k8s_timestamp(first_ts) if pd.notna(first_ts) else str(first_ts),
+                "changes_truncated": False,
+                "change_item_count": 1,
+                "change_item_total": 1,
+                "changes": [{
+                    "path": "metadata.resourceVersion",
+                    "type": "entity_modified",
+                    "old": str(k8s_resource_versions[0]) if k8s_resource_versions else None,
+                    "new": str(k8s_resource_versions[-1]) if k8s_resource_versions else None,
+                    "inferred": False,
+                    "source": "k8s_metadata",
+                    "evidence": {
+                        "resourceVersions": [str(rv) for rv in k8s_resource_versions],
+                        "observation_count": observation_count,
                     },
                 }],
             })
@@ -4494,8 +4691,14 @@ async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
                     "duration_sec": (last_ts - first_ts).total_seconds() if pd.notna(first_ts) and pd.notna(last_ts) else 0,
                     "changes": lifecycle_changes,
                     "lifecycle": {
+                        "inference_mode": lifecycle_inference,
                         "inferred_added": inferred_added,
                         "inferred_removed": inferred_removed,
+                        "metadata_added": metadata_added,
+                        "metadata_removed": metadata_removed,
+                        "metadata_modified": metadata_modified,
+                        "creationTimestamp": creation_ts_str,
+                        "resourceVersions": [str(rv) for rv in k8s_resource_versions] if k8s_resource_versions else [],
                     },
                     "reference_spec": {
                         "timestamp": str(specs[0]["timestamp"]),
@@ -4594,8 +4797,14 @@ async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
                 entity_out["change_items"] = change_items
                 entity_out["change_item_count"] = len(change_items)
             entity_out["lifecycle"] = {
+                "inference_mode": lifecycle_inference,
                 "inferred_added": inferred_added,
                 "inferred_removed": inferred_removed,
+                "metadata_added": metadata_added,
+                "metadata_removed": metadata_removed,
+                "metadata_modified": metadata_modified,
+                "creationTimestamp": creation_ts_str,
+                "resourceVersions": [str(rv) for rv in k8s_resource_versions] if k8s_resource_versions else [],
             }
             results.append(entity_out)
     

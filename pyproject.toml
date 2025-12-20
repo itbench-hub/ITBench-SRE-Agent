@@ -1,3 +1,7 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
 [project]
 dependencies = [
     # Evaluations dependencies (LLM-as-a-Judge)
@@ -17,16 +21,16 @@ dependencies = [
 ]
 description = "ITBench SRE Agent - AI-powered incident investigation for SRE benchmarks"
 name = "itbench-sre-agent"
+optional-dependencies = { dev = ["black>=24.0.0", "isort>=5.13.0", "ruff>=0.1.0"] }
 requires-python = ">=3.12"
+scripts = { itbench-leaderboard = "itbench_leaderboard.cli:main", itbench-eval = "itbench_evaluations.__main__:main", zero = "zero.cli:main", sre-proxy-bridge = "proxy_bridge.server:main" }
 version = "0.2.0"
 
-[project.optional-dependencies]
-dev = ["black>=24.0.0", "isort>=5.13.0", "ruff>=0.1.0"]
+[tool.hatch.build.targets.wheel]
+packages = ["zero", "proxy_bridge", "sre_tools", "itbench_evaluations", "itbench_leaderboard"]
 
-[project.scripts]
-itbench-leaderboard = "itbench_leaderboard.cli:main"
-itbench-eval = "itbench_evaluations.__main__:main"
-zero = "zero.cli:main"
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.black]
 line-length = 120
@@ -35,13 +39,3 @@ target-version = ["py312"]
 [tool.isort]
 line_length = 120
 profile = "black"
-
-[build-system]
-build-backend = "hatchling.build"
-requires = ["hatchling"]
-
-[tool.hatch.build.targets.wheel]
-packages = ["zero", "sre_tools", "itbench_evaluations", "itbench_leaderboard"]
-
-[tool.hatch.metadata]
-allow-direct-references = true

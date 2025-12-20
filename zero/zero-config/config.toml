@@ -18,7 +18,7 @@ profile = "sre_support_engineer"
 # model = "aws/claude-opus-4-1"
 # model = "openai/gpt-5.1"
 # model = "google/gemini-3-pro-preview"
-model_provider = "ete"              # Use default OpenAI provider
+model_provider = "ete-bridge"              # Use default OpenAI provider
 # model = "aws/claude-opus-4-5" 
 
 # Reasoning configuration
@@ -79,7 +79,15 @@ PYTHONPATH = "/Users/saurabhjha/projects/open_source/sre_support_agent"
 name = "ETE LITELLM PROXY"
 base_url = "https://ete-litellm.ai-models.vpc-int.res.ibm.com"
 env_key = "ETE_API_KEY"
-wire_api = "responses"  # Use "responses" only for OpenAI models
+wire_api = "chat"  # Use "responses" only for OpenAI models
+
+# Local bridge in front of ETE proxy (Codex → bridge → ETE → Gemini)
+# Run: sre-proxy-bridge --upstream-base-url "https://ete-litellm.ai-models.vpc-int.res.ibm.com" --port 4280
+[model_providers.ete-bridge]
+name = "ETE Bridge (local)"
+base_url = "http://127.0.0.1:4280/v1"
+env_key = "ETE_API_KEY"
+wire_api = "chat"
 
 [model_providers.openrouter]
 name = "openrouter"
@@ -108,9 +116,15 @@ wire_api = "chat"  # Use "responses" only for openai/* models
 [model_providers.litellm_proxy]
 name = "LiteLLM Proxy"
 base_url = "http://localhost:4000"       # Your LiteLLM proxy URL
-env_key = "ETE_API_KEY"              # Or use OPENAI_API_KEY
-wire_api = "chat"                        # Use chat for most proxy setups
+env_key = "LITELLM_API_KEY"                   # Or use OPENAI_API_KEY (depends on your proxy)
+wire_api = "chat"                             # Use "responses" only for OpenAI models/providers
 
+
+[model_providers.google]
+name = "google"
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+env_key = "GOOGLE_API_KEY"
+wire_api = "chat"
 # [otel]
 # OTEL tracing is configured automatically by Zero when --collect-traces is used.
 # If you want to enable it manually, use this format:

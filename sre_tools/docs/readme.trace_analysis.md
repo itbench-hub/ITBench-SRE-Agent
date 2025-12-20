@@ -343,3 +343,4 @@ trace_result = await _get_trace_error_tree({
 
 This provides a unified view of an entity's behavior including events, alerts, metrics, and traces.
 
+

@@ -29,3 +29,4 @@ INCIDENT_SPECIFIC_PARTIALLY_CORRECT_REASONING = {
     "15": ["ConfigMap flagd-config modified to set adfailure defaultVariant to on"],
     "18": ["PodChaos injected artificial network latency into product-catalog pods"]
 }
+

@@ -483,3 +483,4 @@ async def evaluate_batch(
     
     logger.info(f"Batch evaluation complete: {len(processed_results)} results")
     return processed_results
+

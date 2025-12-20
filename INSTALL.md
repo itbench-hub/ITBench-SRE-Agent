@@ -112,6 +112,13 @@ itbench-leaderboard --help
 itbench-eval --help
 ```
 
+### Common gotchas
+
+- **`ModuleNotFoundError: No module named 'numpy'`**: you’re running outside the managed environment.
+  - If you installed with **uv**, run via uv: `uv run itbench-leaderboard --help` (or `uv run python -m itbench_leaderboard --help`).
+  - If you installed with **pip**, make sure your venv is activated: `source .venv/bin/activate`.
+- **Command name uses dashes**: the CLI is `itbench-leaderboard` (not `itbench_leaderboard`).
+
 ### 2. Check MCP tools module loads
 
 ```bash

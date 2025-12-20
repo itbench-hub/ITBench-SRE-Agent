@@ -1,9 +1,11 @@
 [project]
 dependencies = [
-    # Judge dependencies
-    "litellm>=1.80.7",
+    # Evaluations dependencies (LLM-as-a-Judge)
+    "openai>=1.0.0",
     "pyyaml>=6.0.0",
     "asteval>=1.0.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
     # MCP tools dependencies
     "mcp>=1.0.0",
     "pandas>=2.0.0",
@@ -21,6 +23,7 @@ dev = ["black>=24.0.0", "isort>=5.13.0", "ruff>=0.1.0"]
 
 [project.scripts]
 itbench-leaderboard = "itbench_leaderboard.cli:main"
+itbench-eval = "itbench_evaluations.__main__:main"
 zero = "zero.cli:main"
 
 [tool.black]
@@ -36,7 +39,7 @@ build-backend = "hatchling.build"
 requires = ["hatchling"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["zero", "sre_tools", "itbench_judge", "itbench_leaderboard"]
+packages = ["zero", "sre_tools", "itbench_evaluations", "itbench_leaderboard"]
 
 [tool.hatch.metadata]
 allow-direct-references = true

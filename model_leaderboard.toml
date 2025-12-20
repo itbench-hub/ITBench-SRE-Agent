@@ -46,9 +46,9 @@ collect_traces = true
 #   - litellm_proxy: LITELLM_API_KEY or OPENAI_API_KEY
 
 [judge]
-model = "litellm_proxy/GCP/gemini-2.5-pro"
-provider = "litellm_proxy"
-base_url = "https://ete-litellm.ai-models.vpc-int.res.ibm.com"
+model = "google/gemini-2.5-pro"
+provider = "openrouter"
+base_url = "https://openrouter.ai/api/v1"
 
 # --- Alternative Judge Configurations ---
 #
@@ -87,22 +87,22 @@ base_url = "https://ete-litellm.ai-models.vpc-int.res.ibm.com"
 #   - ETE_API_KEY: ETE LiteLLM Proxy API key
 #   - AZURE_OPENAI_API_KEY: Azure OpenAI API key
 
-# [[agents]]
-# # --- Run Identifier (prompt + commit + model) ---
-# prompt = "react with code"                                    # Prompt identifier (e.g., "tap", "fs_code")
-# commit = ""                                       # Git commit ID (leave empty to auto-capture HEAD)
-# model = "Azure/gpt-5.1-2025-11-13"                # Model name
+[[agents]]
+# --- Run Identifier (prompt + commit + model) ---
+prompt = "react with code"                                    # Prompt identifier (e.g., "tap", "fs_code")
+commit = ""                                       # Git commit ID (leave empty to auto-capture HEAD)
+model = "Azure/gpt-5.1-2025-11-13"                # Model name
 
-# # --- Model Configuration ---
-# provider = "ete"
-# prompt_file = "./zero/zero-config/prompts/fs_code.md"
-# # wire_api: "chat" (default, works with most models) or "responses" (OpenAI models only)
-# wire_api = "responses"
-# # Optional: extra variables for prompt substitution (in addition to SNAPSHOT_DIRS)
-# # [agents.variables]
-# # MY_VAR = "value"
-# # Optional: user query to append to agent run
-# user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. Lets begin the investigation."
+# --- Model Configuration ---
+provider = "ete"
+prompt_file = "./zero/zero-config/prompts/fs_code.md"
+# wire_api: "chat" (default, works with most models) or "responses" (OpenAI models only)
+wire_api = "responses"
+# Optional: extra variables for prompt substitution (in addition to SNAPSHOT_DIRS)
+# [agents.variables]
+# MY_VAR = "value"
+# Optional: user query to append to agent run
+user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. We want to explain alerts in otel-demo namespace only. Lets begin the investigation."
 
 # # Uncomment to add more agents for comparison:
 
@@ -114,17 +114,17 @@ base_url = "https://ete-litellm.ai-models.vpc-int.res.ibm.com"
  commit = ""
  prompt_file = "./zero/zero-config/prompts/fs_code.md"
  wire_api = "chat"  # Gemini uses chat format
- user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. Lets begin the investigation."
+ user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. We want to explain alerts in otel-demo namespace only. Lets begin the investigation."
 
 
 # [[agents]]
 # prompt = "react with code"   
-# model = "anthropic/claude-opus-4"
+# model = "aws/claude-opus-4-5" #"anthropic/claude-opus-4"
 # commit = ""
-# provider = "openrouter"
+# provider = "ete"
 # prompt_file = "./zero/zero-config/prompts/fs_code.md"
 # wire_api = "chat"  # Claude uses chat format
-# user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. Lets begin the investigation."
+# user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. We want to explain alerts in otel-demo namespace only.  Lets begin the investigation."
 
 # [[agents]]
 # prompt = "react with code"  
@@ -133,4 +133,4 @@ base_url = "https://ete-litellm.ai-models.vpc-int.res.ibm.com"
 # provider = "ete"
 # prompt_file = "./zero/zero-config/prompts/fs_code.md"
 # wire_api = "responses"  # OpenAI models can use responses format
-# user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. Lets begin the investigation."
+# user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. We want to explain alerts in otel-demo namespace only.  Lets begin the investigation."

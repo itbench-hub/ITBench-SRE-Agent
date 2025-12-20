@@ -27,6 +27,7 @@ uv sync
 # Verify installation
 uv run zero --help
 uv run itbench-leaderboard --help
+uv run itbench-eval --help
 ```
 
 ### Option 2: Using pip
@@ -52,6 +53,7 @@ pip install -e .
 # Verify installation
 zero --help
 itbench-leaderboard --help
+itbench-eval --help
 ```
 
 ---
@@ -75,15 +77,22 @@ Or follow the official instructions: https://github.com/openai/codex
 Create a `.env` file or export these environment variables:
 
 ```bash
-# Required: At least one LLM provider API key
-export OPENAI_API_KEY="sk-..."           # For OpenAI models
-export OR_API_KEY="sk-or-..."            # For OpenRouter models
-export AZURE_API_KEY="..."               # For Azure OpenAI
+# Required: at least one agent provider API key
+export OPENAI_API_KEY="sk-..."                 # For OpenAI models (agents)
+export OR_API_KEY="sk-or-..."                  # For OpenRouter models (agents)
+export AZURE_OPENAI_API_KEY="..."              # For Azure OpenAI (agents)
 
 # Optional: For specific providers
-export ETE_API_KEY="..."                 # For ETE LiteLLM Proxy
-export ANTHROPIC_API_KEY="..."           # For Anthropic Claude
-export GOOGLE_API_KEY="..."              # For Google Gemini
+export ETE_API_KEY="..."                       # For ETE LiteLLM Proxy (agents)
+export ANTHROPIC_API_KEY="..."                 # For Anthropic Claude
+export GOOGLE_API_KEY="..."                    # For Google Gemini
+
+# Judge (itbench_evaluations) uses OpenAI-compatible env vars.
+# The leaderboard sets these automatically from `model_leaderboard.toml` [judge],
+# but set them yourself when running `itbench-eval` directly.
+export JUDGE_BASE_URL="https://openrouter.ai/api/v1"
+export JUDGE_API_KEY="$OR_API_KEY"
+export JUDGE_MODEL="google/gemini-2.5-pro"
 ```
 
 ---
@@ -98,6 +107,9 @@ zero --help
 
 # Leaderboard runner
 itbench-leaderboard --help
+
+# Judge runner
+itbench-eval --help
 ```
 
 ### 2. Check MCP tools module loads
@@ -170,6 +182,7 @@ After installation, you'll have these CLI commands:
 |---------|-------------|
 | `zero` | Agent runner (wraps Codex CLI) |
 | `itbench-leaderboard` | Run benchmarks and evaluate agents |
+| `itbench-eval` | Run judge directly on saved outputs |
 
 And these Python packages:
 
@@ -177,7 +190,7 @@ And these Python packages:
 |---------|-------------|
 | `zero` | Agent runner module |
 | `sre_tools` | MCP tools for SRE analysis |
-| `itbench_judge` | LLM-as-a-Judge evaluation |
+| `itbench_evaluations` | LLM-as-a-Judge evaluation (direct OpenAI SDK) |
 | `itbench_leaderboard` | Benchmark orchestration |
 
 ---

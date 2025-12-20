@@ -10,7 +10,7 @@ A modular framework for evaluating LLM agents on Site Reliability Engineering (S
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌──────────────┐    ┌──────────────────┐    ┌──────────────────────────┐  │
-│  │    Zero      │───▶│  ITBench         │───▶│     ITBench Judge        │  │
+│  │    Zero      │───▶│  ITBench         │───▶│   ITBench Evaluations    │  │
 │  │ Agent Runner │    │  Leaderboard     │    │   (LLM-as-a-Judge)       │  │
 │  └──────────────┘    └──────────────────┘    └──────────────────────────┘  │
 │        │                     │                          │                   │
@@ -34,7 +34,7 @@ A modular framework for evaluating LLM agents on Site Reliability Engineering (S
 |--------|-------------|---------------|
 | **[Zero](./zero/)** | Thin wrapper around [Codex CLI](https://github.com/openai/codex) for running SRE agents | [zero/zero-config/README.md](./zero/zero-config/README.md) |
 | **[ITBench Leaderboard](./itbench_leaderboard/)** | Orchestrates agent runs across scenarios, collects results | [itbench_leaderboard/README.md](./itbench_leaderboard/README.md) |
-| **[ITBench Judge](./itbench_judge/)** | LLM-as-a-Judge evaluator for agent outputs | [itbench_judge/README.md](./itbench_judge/README.md) |
+| **[ITBench Evaluations](./itbench_evaluations/)** | LLM-as-a-Judge evaluator for agent outputs (direct OpenAI/OpenAI-compatible SDK) | `itbench_evaluations/` |
 | **[Website](./website/)** | Static leaderboard visualization | [website/README.md](./website/README.md) |
 | **[SRE Tools](./sre_tools/)** | MCP server with SRE diagnostic tools | [sre_tools/README.md](./sre_tools/README.md) |
 
@@ -80,21 +80,29 @@ The SRE Tools module provides specialized MCP (Model Context Protocol) tools for
 ### Installation
 
 ```bash
-# Clone with submodules
+# Clone with submodules (ITBench-Snapshots is a submodule)
 git clone --recurse-submodules <repository-url>
 cd sre_support_agent
 
 # Install dependencies
 uv sync
-# or: pip install -r requirements.txt
+# or: python -m venv .venv && source .venv/bin/activate && pip install -e .
 ```
 
 ### Environment Variables
 
 ```bash
-export OR_API_KEY="your-openrouter-key"        # OpenRouter
-export ETE_API_KEY="your-ete-key"              # ETE LiteLLM Proxy
-export AZURE_OPENAI_API_KEY="your-azure-key"  # Azure OpenAI
+# Agent model provider keys (used by Zero runs)
+export OR_API_KEY="your-openrouter-key"              # OpenRouter (agents)
+export ETE_API_KEY="your-ete-key"                    # ETE LiteLLM Proxy (agents)
+export AZURE_OPENAI_API_KEY="your-azure-key"         # Azure OpenAI (agents)
+
+# Judge (itbench_evaluations) uses OpenAI-compatible env vars.
+# The leaderboard sets these automatically from [judge] config, but set them
+# yourself when running `itbench-eval` directly.
+export JUDGE_BASE_URL="https://openrouter.ai/api/v1"
+export JUDGE_API_KEY="$OR_API_KEY"
+export JUDGE_MODEL="google/gemini-2.5-pro"
 ```
 
 ---
@@ -131,34 +139,19 @@ python -m zero --workspace /tmp/work \
 
 ### 2. Run Judge Independently
 
-Evaluate a single agent output against ground truth:
+Evaluate agent outputs against ground truth using the `itbench_evaluations` judge (recommended via the `itbench-eval` CLI).
 
 ```bash
-python -c "
-from pathlib import Path
-from itbench_judge.sre import evaluate_single_run, RunMetadata, JudgeConfig
-
-result = evaluate_single_run(
-    agent_output_path=Path('./agent_output.json'),
-    ground_truth_path=Path('./Scenario-3/ground_truth.yaml'),
-    metadata=RunMetadata(
-        scenario_name='Scenario-3',
-        agent_model='gpt-5.1',
-        agent_provider='azure',
-        run_id='1',
-    ),
-    judge_config=JudgeConfig(
-        model='openrouter/google/gemini-2.5-pro',
-        provider='openrouter',
-        base_url='https://openrouter.ai/api/v1',
-    ),
-)
-print(f'Score: {result.primary_score}/100')
-print(f'Scores: {result.scores}')
-"
+# Batch evaluate all trials under an outputs directory (leaderboard_results layout)
+itbench-eval \
+  --ground-truth ./ITBench-Snapshots \
+  --outputs ./leaderboard_results/react\ with\ code_google_gemini-2.5-pro_d4cd266 \
+  --result-file ./evaluation_results.json
 ```
 
-📖 **Full documentation**: [itbench_judge/README.md](./itbench_judge/README.md)
+Notes:
+- `--ground-truth` can be either a directory like `./ITBench-Snapshots` (each subdir contains its own `ground_truth.yaml`) **or** a single consolidated JSON/YAML file.
+- Metrics are produced as floats in \([0,1]\) (precision/recall/F1); the leaderboard prints them as percentages.
 
 ### 3. Run Leaderboard (Full Benchmark)
 
@@ -177,6 +170,9 @@ python -m itbench_leaderboard --config model_leaderboard.toml \
 
 # Re-judge existing outputs (without re-running agents)
 python -m itbench_leaderboard --config model_leaderboard.toml --rejudge
+
+# Smoke test: 2 incidents, 1 run
+python -m itbench_leaderboard --config model_leaderboard.toml --scenarios 1 2 --runs 1
 ```
 
 📖 **Full documentation**: [itbench_leaderboard/README.md](./itbench_leaderboard/README.md)
@@ -197,7 +193,7 @@ max_workers = 3
 
 # Judge configuration
 [judge]
-model = "openrouter/google/gemini-2.5-pro"
+model = "google/gemini-2.5-pro"
 provider = "openrouter"
 base_url = "https://openrouter.ai/api/v1"
 
@@ -286,12 +282,13 @@ The judge evaluates agent outputs on these metrics:
 
 | Metric | Description | Range |
 |--------|-------------|-------|
-| `root_cause_entity` | Did agent identify correct root cause entity? | 0-100 |
-| `root_cause_reasoning` | Quality of reasoning for root cause | 0-100 |
-| `root_cause_reasoning_partial` | Partial credit for reasoning | 0-100 |
-| `propagation_chain` | Accuracy of failure propagation chain | 0-100 |
-| `root_cause_proximity_no_fp` | How close to root cause (no false positives) | 0-100 |
-| `root_cause_proximity_with_fp` | How close to root cause (with FP penalty) | 0-100 |
+| `root_cause_entity_*` | Root cause entity precision/recall/F1 | 0.0–1.0 |
+| `root_cause_entity_k_*` | Root cause entity@k precision/recall/F1 | 0.0–1.0 |
+| `root_cause_reasoning` | Reasoning correctness | 0.0–1.0 |
+| `root_cause_reasoning_partial` | Partial credit for reasoning | 0.0–1.0 |
+| `propagation_chain` | Failure propagation chain score | 0.0–1.0 |
+| `fault_localization_component_identification` | Component-level localization (pass/fail) | 0 or 1 |
+| `root_cause_proximity_*` | Proximity precision/recall/F1 | 0.0–1.0 |
 
 ---
 
@@ -322,11 +319,11 @@ sre_support_agent/
 │   ├── runner.py                  # Agent subprocess runner
 │   └── results.py                 # Results aggregation
 │
-├── itbench_judge/                 # LLM-as-a-Judge
-│   ├── README.md
-│   └── sre/
-│       ├── evaluator.py           # Evaluation logic
-│       └── prompts.py             # Judge prompts
+├── itbench_evaluations/           # LLM-as-a-Judge (direct OpenAI SDK)
+│   ├── __main__.py                # `itbench-eval` CLI entrypoint
+│   ├── agent.py                   # LAAJ evaluator
+│   ├── loader.py                  # GT/output loaders
+│   └── prompts/                   # Judge prompts
 │
 ├── sre_tools/                     # MCP tools for SRE
 │   ├── README.md                  # Full tool documentation

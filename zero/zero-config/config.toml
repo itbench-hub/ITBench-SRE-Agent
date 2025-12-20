@@ -55,7 +55,7 @@ command = "python"
 args = ["-m", "sre_tools.cli.sre_utils"]
 
 [mcp_servers.sre_utils.env]
-PYTHONPATH = "/Users/saurabhjha/projects/open_source/sre_support_agent"
+PYTHONPATH = "python"
 
 # ============================================================================
 # Model Provider Configuration

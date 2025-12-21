@@ -14,6 +14,7 @@ dependencies = [
     "mcp>=1.0.0",
     "pandas>=2.0.0",
     "drain3>=0.9.11", # Log pattern mining (Drain algorithm)
+    "opentelemetry-proto>=1.24.0", # OTLP protobuf decoding
     # Leaderboard (connection testing)
     "requests>=2.28.0",
     # Proxy bridge (async HTTP with connection pooling)

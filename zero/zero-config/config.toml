@@ -80,6 +80,11 @@ name = "ETE LITELLM PROXY"
 base_url = "https://ete-litellm.ai-models.vpc-int.res.ibm.com"
 env_key = "ETE_API_KEY"
 wire_api = "chat"  # Use "responses" only for OpenAI models
+stream_idle_timeout_ms = 300000    # 5m idle timeout
+stream_max_retries = 40
+request_max_retries = 40
+max_output_tokens = 16384
+model_verbosity = "medium"
 
 # Local bridge in front of ETE proxy (Codex → bridge → ETE → Gemini)
 # Run: sre-proxy-bridge --upstream-base-url "https://ete-litellm.ai-models.vpc-int.res.ibm.com" --port 4280

@@ -88,6 +88,11 @@ name = "ETE Bridge (local)"
 base_url = "http://127.0.0.1:4280/v1"
 env_key = "ETE_API_KEY"
 wire_api = "chat"
+stream_idle_timeout_ms = 300000    # 5m idle timeout
+stream_max_retries = 40
+request_max_retries = 40
+max_output_tokens = 16384
+model_verbosity = "medium"
 
 [model_providers.openrouter]
 name = "openrouter"

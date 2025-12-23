@@ -34,3 +34,4 @@ def get_judge_model() -> str:
     """
     return os.environ.get("JUDGE_MODEL", "gpt-4-turbo")
 
+

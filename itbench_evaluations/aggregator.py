@@ -155,3 +155,4 @@ def calculate_statistics(all_incidents_results: List[Dict[str, Any]]) -> Dict[st
     
     return stats
 
+

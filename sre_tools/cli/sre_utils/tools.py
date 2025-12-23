@@ -614,6 +614,37 @@ def register_tools(server: Server) -> None:
                     "required": ["k8_object", "snapshot_dir"]
                 }
             ),
+            Tool(
+                name="get_k8_spec",
+                description="Retrieves the Kubernetes spec for a specific resource. "
+                            "Takes a resource name in Kind/name format and returns the full spec from k8s_objects_raw.tsv. "
+                            "Returns the latest spec by default, or all observations if requested. "
+                            "Example: Get deployment spec: k8_object_name='Deployment/cart'. "
+                            "Example: Get pod spec: k8_object_name='Pod/frontend-abc123'. "
+                            "Useful for: inspecting current resource configuration, debugging deployments.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "k8s_objects_file": {
+                            "type": "string",
+                            "description": "Path to Kubernetes objects TSV file (e.g., k8s_objects_raw.tsv)"
+                        },
+                        "k8_object_name": {
+                            "type": "string",
+                            "description": "K8s resource name in Kind/name format (e.g., 'Deployment/cart', 'Pod/frontend-xyz', 'Service/checkout')"
+                        },
+                        "return_all_observations": {
+                            "type": "boolean",
+                            "description": "Optional: If true, return all observations over time instead of just the latest. Default: false"
+                        },
+                        "include_metadata": {
+                            "type": "boolean",
+                            "description": "Optional: If true, include full metadata in response. Default: true"
+                        }
+                    },
+                    "required": ["k8s_objects_file", "k8_object_name"]
+                }
+            ),
         ]
     
     @server.call_tool()
@@ -642,6 +673,8 @@ def register_tools(server: Server) -> None:
             return await _k8s_spec_change_analysis(arguments)
         elif name == "get_context_contract":
             return await _get_context_contract(arguments)
+        elif name == "get_k8_spec":
+            return await _get_k8_spec(arguments)
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -4920,6 +4953,238 @@ async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
 
 
 # =============================================================================
+# Get K8s Spec - Retrieve K8s resource spec
+# =============================================================================
+
+async def _get_k8_spec(args: dict[str, Any]) -> list[TextContent]:
+    """Retrieve the Kubernetes spec for a specific resource.
+    
+    Reads k8s_objects_raw.tsv (or similar TSV file) and returns the spec
+    for the specified resource in Kind/name format.
+    
+    Supports two input formats:
+    1) Processed format: columns timestamp, object_kind, object_name, body
+    2) Raw OTEL format: columns Timestamp/TimestampTime, Body (JSON with kind/metadata.name)
+    """
+    def _json_error(message: str) -> list[TextContent]:
+        """Return a structured JSON error so callers can reliably parse the response."""
+        payload = {
+            "error": message,
+            "k8s_objects_file": args.get("k8s_objects_file", ""),
+            "k8_object_name": args.get("k8_object_name", ""),
+            "found": False,
+            "spec": None,
+        }
+        return [TextContent(type="text", text=json.dumps(payload, indent=2))]
+
+    if pd is None:
+        return _json_error("pandas is required for this tool")
+    
+    k8s_objects_file = args.get("k8s_objects_file", "")
+    k8_object_name = args.get("k8_object_name", "")
+    return_all_observations = args.get("return_all_observations", False)
+    include_metadata = args.get("include_metadata", True)
+    
+    if not k8s_objects_file:
+        return _json_error("k8s_objects_file is required")
+    
+    if not k8_object_name:
+        return _json_error("k8_object_name is required (format: Kind/name, e.g., 'Deployment/cart')")
+    
+    if not Path(k8s_objects_file).exists():
+        return _json_error(f"K8s objects file not found: {k8s_objects_file}")
+    
+    try:
+        df = pd.read_csv(k8s_objects_file, sep='\t')
+    except Exception as e:
+        return _json_error(f"Error reading k8s objects file: {e}")
+    
+    # -------------------------------------------------------------------------
+    # Detect input format and normalize columns
+    # -------------------------------------------------------------------------
+    cols = set(df.columns)
+    is_raw_otel = False
+
+    if "object_kind" not in cols or "object_name" not in cols:
+        # Try to detect and handle raw OTEL format
+        body_col = "Body" if "Body" in cols else ("body" if "body" in cols else None)
+        if body_col is None:
+            return _json_error(
+                "Unsupported k8s objects format: missing object_kind/object_name columns and no Body column found"
+            )
+
+        # Find timestamp source column
+        if "TimestampTime" in cols:
+            ts_src = "TimestampTime"
+        elif "Timestamp" in cols:
+            ts_src = "Timestamp"
+        elif "timestamp" in cols:
+            ts_src = "timestamp"
+        else:
+            return _json_error(
+                "Unsupported k8s objects format: no timestamp column (TimestampTime/Timestamp/timestamp)"
+            )
+
+        def _extract_k8s_info(raw: Any) -> tuple[str, str, str]:
+            """Extract kind/namespace/name from a JSON Body string."""
+            obj = _parse_k8s_body_json(raw)
+            if not isinstance(obj, dict):
+                return ("", "", "")
+            kind = obj.get("kind", "") or ""
+            meta = obj.get("metadata") or {}
+            name = meta.get("name", "") or ""
+            namespace = meta.get("namespace", "") or ""
+            return (kind, namespace, name)
+
+        extracted = df[body_col].apply(lambda x: pd.Series(_extract_k8s_info(x)))
+        extracted.columns = ["object_kind", "object_namespace", "object_name"]
+        df["object_kind"] = extracted["object_kind"]
+        df["object_namespace"] = extracted["object_namespace"]
+        df["object_name"] = extracted["object_name"]
+        df["body"] = df[body_col].astype(str)
+        df["timestamp"] = pd.to_datetime(df[ts_src], errors="coerce", utc=True)
+        
+        # Drop rows where extraction failed
+        df = df[
+            (df["object_kind"].astype(str) != "")
+            & (df["object_name"].astype(str) != "")
+        ]
+        is_raw_otel = True
+    else:
+        # Processed format - ensure required columns exist
+        if "timestamp" not in cols:
+            return _json_error("Unsupported k8s objects format: missing 'timestamp' column")
+        if "body" not in cols:
+            if "Body" in cols:
+                df["body"] = df["Body"].astype(str)
+            else:
+                return _json_error("Unsupported k8s objects format: missing 'body' column")
+        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
+        if "object_namespace" not in df.columns:
+            df["object_namespace"] = ""
+
+    # Normalize columns
+    df["object_kind"] = df["object_kind"].fillna("").astype(str)
+    df["object_namespace"] = df["object_namespace"].fillna("").astype(str)
+    df["object_name"] = df["object_name"].fillna("").astype(str)
+    
+    # Build entity_id: Kind/namespace/name for namespaced, Kind/name for cluster-scoped
+    df["entity_id"] = df["object_kind"] + "/" + df["object_name"]
+    _ns_mask = df["object_namespace"].astype(str) != ""
+    df.loc[_ns_mask, "entity_id"] = (
+        df.loc[_ns_mask, "object_kind"]
+        + "/"
+        + df.loc[_ns_mask, "object_namespace"]
+        + "/"
+        + df.loc[_ns_mask, "object_name"]
+    )
+    
+    # -------------------------------------------------------------------------
+    # Filter by the requested object
+    # -------------------------------------------------------------------------
+    # Support multiple matching strategies:
+    # 1. Exact match on entity_id (Kind/name or Kind/namespace/name)
+    # 2. Match Kind/name even if entity has namespace (for convenience)
+    # 3. Case-insensitive partial match as fallback
+    
+    # Parse the requested k8_object_name
+    parts = k8_object_name.split("/")
+    if len(parts) < 2:
+        return _json_error(f"Invalid k8_object_name format: '{k8_object_name}'. Expected Kind/name or Kind/namespace/name")
+    
+    req_kind = parts[0]
+    req_name = parts[-1]  # Last part is always the name
+    req_namespace = parts[1] if len(parts) == 3 else None
+    
+    # Try exact match first
+    mask = (df['entity_id'].str.lower() == k8_object_name.lower())
+    
+    if not mask.any():
+        # Try matching Kind/name where namespace could be anything
+        mask = (
+            (df['object_kind'].str.lower() == req_kind.lower()) &
+            (df['object_name'].str.lower() == req_name.lower())
+        )
+        if req_namespace:
+            mask = mask & (df['object_namespace'].str.lower() == req_namespace.lower())
+    
+    if not mask.any():
+        # Try partial/contains match as last resort
+        mask = df['entity_id'].str.lower().str.contains(k8_object_name.lower(), na=False)
+    
+    filtered_df = df[mask]
+    
+    if filtered_df.empty:
+        # Provide helpful error with available entities
+        available_kinds = df['object_kind'].unique().tolist()[:20]
+        return _json_error(
+            f"No objects matching '{k8_object_name}' found. "
+            f"Available kinds: {available_kinds}"
+        )
+    
+    # Sort by timestamp to get chronological order
+    filtered_df = filtered_df.sort_values("timestamp", ascending=True)
+    
+    # -------------------------------------------------------------------------
+    # Build response
+    # -------------------------------------------------------------------------
+    observations = []
+    for _, row in filtered_df.iterrows():
+        body_raw = row.get("body", "")
+        spec_obj = _parse_k8s_body_json(body_raw)
+        
+        if not include_metadata and isinstance(spec_obj, dict):
+            # Remove metadata fields if not requested
+            spec_obj = {k: v for k, v in spec_obj.items() if k != "metadata"}
+        
+        ts = row.get("timestamp")
+        ts_str = str(ts) if pd.notna(ts) else ""
+        
+        observations.append({
+            "timestamp": ts_str,
+            "entity_id": row.get("entity_id", ""),
+            "kind": row.get("object_kind", ""),
+            "namespace": row.get("object_namespace", ""),
+            "name": row.get("object_name", ""),
+            "spec": spec_obj,
+        })
+    
+    if not observations:
+        return _json_error(f"No valid specs found for '{k8_object_name}'")
+    
+    # Build output
+    if return_all_observations:
+        output = {
+            "k8s_objects_file": k8s_objects_file,
+            "k8_object_name": k8_object_name,
+            "input_format": "raw_otel" if is_raw_otel else "processed",
+            "found": True,
+            "observation_count": len(observations),
+            "first_timestamp": observations[0]["timestamp"],
+            "last_timestamp": observations[-1]["timestamp"],
+            "observations": observations,
+        }
+    else:
+        # Return only the latest observation
+        latest = observations[-1]
+        output = {
+            "k8s_objects_file": k8s_objects_file,
+            "k8_object_name": k8_object_name,
+            "input_format": "raw_otel" if is_raw_otel else "processed",
+            "found": True,
+            "observation_count": len(observations),
+            "timestamp": latest["timestamp"],
+            "entity_id": latest["entity_id"],
+            "kind": latest["kind"],
+            "namespace": latest["namespace"],
+            "name": latest["name"],
+            "spec": latest["spec"],
+        }
+    
+    return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+
+# =============================================================================
 # Get Context Contract - Aggregated Context Tool
 # =============================================================================
 
@@ -4981,42 +5246,6 @@ def _find_scenario_files(scenario_dir: Path) -> dict[str, Optional[Path]]:
     return files
 
 
-def _get_latest_object_def(objects_file: Path, k8_object: str) -> Optional[dict]:
-    """Get the latest K8s object definition from objects TSV."""
-    if not objects_file or not objects_file.exists():
-        return None
-    
-    try:
-        df = pd.read_csv(objects_file, sep='\t')
-        df['entity_id'] = df['object_kind'] + '/' + df['object_name']
-        
-        # Filter by entity
-        mask = df['entity_id'].str.lower() == k8_object.lower()
-        if not mask.any():
-            # Try partial match
-            mask = df['entity_id'].str.lower().str.contains(k8_object.lower().split('/')[-1], na=False)
-        
-        entity_df = df[mask].copy()
-        if entity_df.empty:
-            return None
-        
-        # Get latest by timestamp
-        entity_df['timestamp'] = pd.to_datetime(entity_df['timestamp'], errors='coerce')
-        latest = entity_df.sort_values('timestamp').iloc[-1]
-        
-        try:
-            body = json.loads(latest['body'].replace('""', '"') if isinstance(latest['body'], str) else '{}')
-            return {
-                "entity": latest['entity_id'],
-                "timestamp": str(latest['timestamp']),
-                "definition": body
-            }
-        except (json.JSONDecodeError, TypeError):
-            return None
-    except Exception:
-        return None
-
-
 async def _get_context_contract(args: dict[str, Any]) -> list[TextContent]:
     """Aggregate full operational context for a K8s entity.
     
@@ -5027,7 +5256,7 @@ async def _get_context_contract(args: dict[str, Any]) -> list[TextContent]:
     4. Trace errors (via get_trace_error_tree)
     5. Metric anomalies (via get_metric_anomalies)
     6. Log patterns (via log_analysis with pattern mining)
-    7. K8s object definition (latest from k8s_objects file)
+    7. K8s object spec (via get_k8_spec - latest spec for the entity)
     8. Spec changes (via k8s_spec_change_analysis)
     
     Pagination:
@@ -5448,21 +5677,45 @@ async def _get_context_contract(args: dict[str, Any]) -> list[TextContent]:
             except Exception as e:
                 result["log_patterns_error"] = str(e)
         
-        # 6. Latest K8s object definition
+        # 6. Latest K8s object spec (via get_k8_spec)
         if files["objects_file"]:
-            latest_def = _get_latest_object_def(files["objects_file"], k8_object)
-            if latest_def:
-                # Truncate large definitions
-                def_str = json.dumps(latest_def.get("definition", {}))
-                if len(def_str) > 2000:
-                    result["k8s_object_definition"] = {
-                        "entity": latest_def["entity"],
-                        "timestamp": latest_def["timestamp"],
-                        "definition_truncated": True,
-                        "definition_preview": def_str[:2000] + "..."
-                    }
+            try:
+                k8_spec_args = {
+                    "k8s_objects_file": str(files["objects_file"]),
+                    "k8_object_name": k8_object,
+                    "include_metadata": True
+                }
+                k8_spec_result = await _get_k8_spec(k8_spec_args)
+                k8_spec_data = json.loads(k8_spec_result[0].text)
+                
+                if k8_spec_data.get("found"):
+                    # Truncate large specs for readability
+                    spec_str = json.dumps(k8_spec_data.get("spec", {}))
+                    if len(spec_str) > 2000:
+                        result["k8s_spec"] = {
+                            "entity_id": k8_spec_data.get("entity_id"),
+                            "kind": k8_spec_data.get("kind"),
+                            "namespace": k8_spec_data.get("namespace"),
+                            "name": k8_spec_data.get("name"),
+                            "timestamp": k8_spec_data.get("timestamp"),
+                            "observation_count": k8_spec_data.get("observation_count"),
+                            "spec_truncated": True,
+                            "spec_preview": spec_str[:2000] + "..."
+                        }
+                    else:
+                        result["k8s_spec"] = {
+                            "entity_id": k8_spec_data.get("entity_id"),
+                            "kind": k8_spec_data.get("kind"),
+                            "namespace": k8_spec_data.get("namespace"),
+                            "name": k8_spec_data.get("name"),
+                            "timestamp": k8_spec_data.get("timestamp"),
+                            "observation_count": k8_spec_data.get("observation_count"),
+                            "spec": k8_spec_data.get("spec")
+                        }
                 else:
-                    result["k8s_object_definition"] = latest_def
+                    result["k8s_spec_error"] = k8_spec_data.get("error", "Resource not found")
+            except Exception as e:
+                result["k8s_spec_error"] = str(e)
         
         # 7. Spec changes
         if files["objects_file"]:
@@ -5822,6 +6075,7 @@ Examples:
         print("  alert_analysis         - Analyze alerts (filter, group, aggregate, duration)")
         print("  alert_summary          - Summarize alerts by entity (counts, severity breakdown)")
         print("  k8s_spec_change_analysis - Detect K8s spec changes (image, replicas, env, resources)")
+        print("  get_k8_spec            - Retrieve K8s spec for a resource (Kind/name format)")
         print("  get_context_contract   - Full context for an entity (events, alerts, traces, metrics, deps)")
         print()
         print("Use '<tool> --help' for tool-specific options.")

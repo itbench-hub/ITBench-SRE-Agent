@@ -52,6 +52,7 @@ Provides tools for building operational topology graphs and analyzing observabil
 | `alert_summary` | **Start here for alerts** - High-level summary: type, entity, duration, frequency |
 | `alert_analysis` | Analyze alerts with filtering, grouping, duration tracking |
 | `k8s_spec_change_analysis` | Track K8s object spec changes over time (config drift, rollouts) |
+| `get_k8_spec` | Retrieve the K8s spec for a specific resource by Kind/name |
 | `get_context_contract` | **Aggregation tool** - Full context for an entity (events, alerts, traces, metrics, spec changes, dependencies) |
 
 #### Usage with Zero
@@ -532,7 +533,81 @@ The tool automatically filters out these fields to avoid noisy "changes":
 - `offset` (Optional): Skip first N entities (pagination). Default: 0.
 - `include_no_change` (Optional): Include entities with no spec changes. Default: false.
 
-**9. get_context_contract** ⭐ (Aggregation Tool)
+**9. get_k8_spec**
+
+Retrieves the Kubernetes spec for a specific resource. Takes a resource name in `Kind/name` format and returns the full spec from the k8s_objects TSV file.
+
+**Use Cases:**
+- Inspect current resource configuration
+- Examine deployment specs, service definitions, configmaps
+- Debug resource configurations during incidents
+- Compare expected vs actual resource definitions
+
+**Example 1: Get the latest spec for a deployment**
+```python
+get_k8_spec(
+    k8s_objects_file="k8s_objects_raw.tsv",
+    k8_object_name="Deployment/cart"
+)
+# Returns:
+# {
+#   "found": true,
+#   "kind": "Deployment",
+#   "name": "cart",
+#   "timestamp": "2025-12-01T21:25:00Z",
+#   "spec": {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {...}, "spec": {...}}
+# }
+```
+
+**Example 2: Get all observations over time**
+```python
+get_k8_spec(
+    k8s_objects_file="k8s_objects_raw.tsv",
+    k8_object_name="ConfigMap/flagd-config",
+    return_all_observations=True
+)
+# Returns all observations of the ConfigMap, useful for seeing how it evolved
+```
+
+**Example 3: Get spec without metadata**
+```python
+get_k8_spec(
+    k8s_objects_file="k8s_objects_raw.tsv",
+    k8_object_name="Service/frontend",
+    include_metadata=False
+)
+# Returns spec without the metadata section (cleaner output)
+```
+
+**Output Format (single observation):**
+```json
+{
+  "k8s_objects_file": "k8s_objects_raw.tsv",
+  "k8_object_name": "Deployment/cart",
+  "input_format": "raw_otel",
+  "found": true,
+  "observation_count": 3,
+  "timestamp": "2025-12-01T21:25:44Z",
+  "entity_id": "Deployment/otel-demo/cart",
+  "kind": "Deployment",
+  "namespace": "otel-demo",
+  "name": "cart",
+  "spec": {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {"name": "cart", "namespace": "otel-demo", ...},
+    "spec": {"replicas": 1, "template": {...}}
+  }
+}
+```
+
+**Arguments:**
+- `k8s_objects_file` (Required): Path to k8s_objects TSV file (e.g., `k8s_objects_raw.tsv`).
+- `k8_object_name` (Required): K8s resource in `Kind/name` format (e.g., `Deployment/cart`, `Pod/frontend-xyz`, `Service/checkout`).
+- `return_all_observations` (Optional): If true, return all observations over time instead of just the latest. Default: false.
+- `include_metadata` (Optional): If true, include full metadata in response. Default: true.
+
+**10. get_context_contract** ⭐ (Aggregation Tool)
 
 Aggregates **full operational context** for a K8s entity by calling multiple analysis tools internally. This is the recommended starting point for incident investigation.
 
@@ -542,7 +617,7 @@ Aggregates **full operational context** for a K8s entity by calling multiple ana
 3. **Alerts** related to the entity (via `alert_analysis`)
 4. **Trace error tree** (via `get_trace_error_tree`)
 5. **Metric anomalies** (via `get_metric_anomalies`)
-6. **Latest K8s object definition** (from k8s_objects file)
+6. **K8s object spec** (via `get_k8_spec` - latest spec for the entity)
 7. **Spec changes** (via `k8s_spec_change_analysis`)
 8. **Dependency context** (events + spec changes for each dependency)
 

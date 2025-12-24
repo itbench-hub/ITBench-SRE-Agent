@@ -21,7 +21,8 @@ INCIDENT_SPECIFIC_FULLY_CORRECT_REASONING = {
     "80": ["Schedule 'otel-demo-checkout-kafka-network-partition' spawned the NetworkChaos experiment"],
     "81": ["Schedule 'otel-demo-shipping-quote-network-partition' status.active set to true, triggering creation of NetworkChaos CR"],
     "83": ["Chaos schedule 'otel-demo-email-checkout-network-partition' became active and created a NetworkChaos CR", "Chaos-Mesh schedule activated a network partition experiment","Chaos-mesh Schedule triggered a recurring NetworkChaos experiment on the checkout pod"],
-    "91": ["Chaos-Mesh injected a network partition on kafka-79d9859bc6-kf97j, dropping all packets","Chaos Schedule controller spawned a NetworkChaos CR"]
+    "91": ["Chaos-Mesh injected a network partition on kafka-79d9859bc6-kf97j, dropping all packets","Chaos Schedule controller spawned a NetworkChaos CR"],
+    "102": ["The namespace memory quota was applied, ResourceQuota/otel-demo-memory blocking new ad-service pods from scheduling."]
 }
 
 INCIDENT_SPECIFIC_PARTIALLY_CORRECT_REASONING = {

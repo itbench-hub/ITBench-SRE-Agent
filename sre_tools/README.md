@@ -33,6 +33,20 @@ python -m zero --session-dir /tmp/session --read-only-dir /path/to/scenario \
 
 ## Available Tools
 
+### K8s Object Identifier Formats
+
+All tools that accept K8s object identifiers (`k8_object`, `k8_object_name`) support three formats:
+
+| Format | Example | Behavior |
+|--------|---------|----------|
+| `namespace/kind/name` | `otel-demo/Service/cart` | **PREFERRED** - Unambiguous, returns exact match |
+| `kind/name` | `Service/cart` | Ambiguous - Returns ALL matches across namespaces (with warning) |
+| `name` | `cart` | Most ambiguous - Returns ALL matches across kinds and namespaces (with warning) |
+
+**Recommendation:** Always use `namespace/kind/name` format for precise results. The ambiguous formats are supported for convenience but return multiple matches when the identifier exists in multiple namespaces or as different resource kinds.
+
+---
+
 ### 1. `sre_utils` - SRE Utility Functions
 
 **Type:** Local Python MCP Server (stdio)
@@ -535,7 +549,12 @@ The tool automatically filters out these fields to avoid noisy "changes":
 
 **9. get_k8_spec**
 
-Retrieves the Kubernetes spec for a specific resource. Takes a resource name in `Kind/name` format and returns the full spec from the k8s_objects TSV file.
+Retrieves the Kubernetes spec for a specific resource. Returns the full spec from the k8s_objects TSV file.
+
+**Identifier Formats (all tools support these):**
+- `namespace/kind/name` - **PREFERRED** (e.g., `otel-demo/Service/cart`) - unambiguous, returns exact match
+- `kind/name` - **DISCOURAGED** (e.g., `Service/cart`) - ambiguous, returns ALL matches across namespaces
+- `name` - **DISCOURAGED** (e.g., `cart`) - most ambiguous, returns ALL matches across kinds and namespaces
 
 **Use Cases:**
 - Inspect current resource configuration
@@ -543,52 +562,65 @@ Retrieves the Kubernetes spec for a specific resource. Takes a resource name in 
 - Debug resource configurations during incidents
 - Compare expected vs actual resource definitions
 
-**Example 1: Get the latest spec for a deployment**
+**Example 1: Get spec with precise identifier (PREFERRED)**
 ```python
 get_k8_spec(
     k8s_objects_file="k8s_objects_raw.tsv",
-    k8_object_name="Deployment/cart"
+    k8_object_name="otel-demo/Deployment/cart"  # namespace/kind/name
 )
-# Returns:
+# Returns exact match:
 # {
 #   "found": true,
+#   "identifier_format": "namespace/kind/name",
+#   "entity_id": "otel-demo/Deployment/cart",
 #   "kind": "Deployment",
+#   "namespace": "otel-demo",
 #   "name": "cart",
-#   "timestamp": "2025-12-01T21:25:00Z",
-#   "spec": {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {...}, "spec": {...}}
+#   "spec": {...}
 # }
 ```
 
-**Example 2: Get all observations over time**
+**Example 2: Ambiguous identifier (returns all matches)**
 ```python
 get_k8_spec(
     k8s_objects_file="k8s_objects_raw.tsv",
-    k8_object_name="ConfigMap/flagd-config",
+    k8_object_name="cart"  # name only - ambiguous
+)
+# Returns ALL resources named 'cart':
+# {
+#   "found": true,
+#   "identifier_format": "name",
+#   "warning": "Format 'name' is highly ambiguous...",
+#   "entity_count": 3,
+#   "entities": {
+#     "otel-demo/Deployment/cart": {...},
+#     "otel-demo/Service/cart": {...},
+#     "otel-demo/Endpoints/cart": {...}
+#   }
+# }
+```
+
+**Example 3: Get all observations over time**
+```python
+get_k8_spec(
+    k8s_objects_file="k8s_objects_raw.tsv",
+    k8_object_name="otel-demo/ConfigMap/flagd-config",
     return_all_observations=True
 )
 # Returns all observations of the ConfigMap, useful for seeing how it evolved
 ```
 
-**Example 3: Get spec without metadata**
-```python
-get_k8_spec(
-    k8s_objects_file="k8s_objects_raw.tsv",
-    k8_object_name="Service/frontend",
-    include_metadata=False
-)
-# Returns spec without the metadata section (cleaner output)
-```
-
-**Output Format (single observation):**
+**Output Format (single entity):**
 ```json
 {
   "k8s_objects_file": "k8s_objects_raw.tsv",
-  "k8_object_name": "Deployment/cart",
-  "input_format": "raw_otel",
+  "k8_object_name": "otel-demo/Deployment/cart",
+  "identifier_format": "namespace/kind/name",
+  "input_format": "processed",
   "found": true,
   "observation_count": 3,
   "timestamp": "2025-12-01T21:25:44Z",
-  "entity_id": "Deployment/otel-demo/cart",
+  "entity_id": "otel-demo/Deployment/cart",
   "kind": "Deployment",
   "namespace": "otel-demo",
   "name": "cart",
@@ -603,7 +635,7 @@ get_k8_spec(
 
 **Arguments:**
 - `k8s_objects_file` (Required): Path to k8s_objects TSV file (e.g., `k8s_objects_raw.tsv`).
-- `k8_object_name` (Required): K8s resource in `Kind/name` format (e.g., `Deployment/cart`, `Pod/frontend-xyz`, `Service/checkout`).
+- `k8_object_name` (Required): K8s resource identifier. Formats: `namespace/kind/name` (PREFERRED), `kind/name`, or `name`.
 - `return_all_observations` (Optional): If true, return all observations over time instead of just the latest. Default: false.
 - `include_metadata` (Optional): If true, include full metadata in response. Default: true.
 

@@ -121,7 +121,7 @@ def register_tools(server: Server) -> None:
                         },
                         "k8_object_name": {
                             "type": "string",
-                            "description": "Optional: Specific K8s object (format '<kind>/<name>'). Omit to analyze ALL objects."
+                            "description": "Optional: Specific K8s object. Formats: 'namespace/kind/name' (preferred), 'kind/name', or 'name'. Omit to analyze ALL objects."
                         },
                         "object_pattern": {
                             "type": "string",
@@ -202,7 +202,7 @@ def register_tools(server: Server) -> None:
                     "properties": {
                         "k8_object_name": {
                             "type": "string",
-                            "description": "Name of the K8s object (format '<kind>/<name>', e.g., 'pod/my-pod')"
+                            "description": "K8s object identifier. Formats: 'namespace/kind/name' (preferred), 'kind/name', or 'name'"
                         },
                         "base_dir": {
                             "type": "string",
@@ -304,7 +304,7 @@ def register_tools(server: Server) -> None:
                         },
                         "k8_object": {
                             "type": "string",
-                            "description": "Optional: K8s object in Kind/name format (e.g., 'Deployment/recommendation', 'Pod/cart-xxx'). Matches against k8s.deployment.name or k8s.pod.name in ResourceAttributes."
+                            "description": "Optional: K8s object identifier. Formats: 'namespace/kind/name' (preferred), 'kind/name', or 'name'. Matches against k8s.deployment.name or k8s.pod.name in ResourceAttributes."
                         },
                         "service_name": {
                             "type": "string",
@@ -520,9 +520,10 @@ def register_tools(server: Server) -> None:
                 description="Analyzes Kubernetes object spec changes over time. "
                             "Detects and reports meaningful spec changes, filtering out timestamp-related churn. "
                             "Groups by entity, computes diffs between consecutive specs, and reports duration. "
+                            "Supports multiple identifier formats: namespace/kind/name (PREFERRED), kind/name, or name. "
                             "Example: Find all spec changes: k8s_objects_file='k8s_objects.tsv'. "
-                            "Example: Changes to a specific deployment: k8_object_name='Deployment/cart'. "
-                            "Example: Changes in time window: start_time='2025-12-01T21:00:00Z', end_time='2025-12-01T22:00:00Z'. "
+                            "Example (preferred): k8_object_name='otel-demo/Deployment/cart'. "
+                            "Example (ambiguous): k8_object_name='Deployment/cart' - returns changes for all matching objects. "
                             "Useful for: identifying config drift, tracking rollouts, correlating incidents with changes.",
                 inputSchema={
                     "type": "object",
@@ -533,7 +534,7 @@ def register_tools(server: Server) -> None:
                         },
                         "k8_object_name": {
                             "type": "string",
-                            "description": "Optional: Filter by specific object (format 'Kind/name', e.g., 'Deployment/cart', 'Pod/frontend-xyz')"
+                            "description": "Optional: Filter by specific object. Formats: 'namespace/kind/name' (PREFERRED), 'kind/name', or 'name'"
                         },
                         "start_time": {
                             "type": "string",
@@ -574,17 +575,18 @@ def register_tools(server: Server) -> None:
             Tool(
                 name="get_context_contract",
                 description="Aggregates full operational context for a K8s entity by calling multiple analysis tools. "
-                            "Returns: events, alerts, trace errors, metric anomalies, K8s object definition, spec changes, "
+                            "Returns: events, alerts, trace errors, metric anomalies, K8s object spec, spec changes, "
                             "and dependency context. Uses existing tools internally (topology_analysis, event_analysis, etc.). "
-                            "Example: Get full context for a service: k8_object='Service/cart', snapshot_dir='/path/to/snapshot'. "
-                            "Example: With time window: start_time='2025-12-01T21:00:00Z', end_time='2025-12-01T22:00:00Z'. "
+                            "Supports identifier formats: namespace/kind/name (PREFERRED), kind/name, or name. "
+                            "Example (preferred): k8_object='otel-demo/Service/cart', snapshot_dir='/path/to/snapshot'. "
+                            "Example (ambiguous): k8_object='Service/cart' - may match multiple namespaces. "
                             "Pagination: page=1 returns main entity context, page=2+ returns dependency context.",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "k8_object": {
                             "type": "string",
-                            "description": "K8s object in Kind/name format (e.g., 'Deployment/cart', 'Service/frontend', 'Pod/cart-xyz')"
+                            "description": "K8s object identifier. Formats: 'namespace/kind/name' (PREFERRED), 'kind/name', or 'name'"
                         },
                         "snapshot_dir": {
                             "type": "string",
@@ -617,10 +619,11 @@ def register_tools(server: Server) -> None:
             Tool(
                 name="get_k8_spec",
                 description="Retrieves the Kubernetes spec for a specific resource. "
-                            "Takes a resource name in Kind/name format and returns the full spec from k8s_objects_raw.tsv. "
+                            "Supports multiple identifier formats: namespace/kind/name (PREFERRED), kind/name, or name. "
                             "Returns the latest spec by default, or all observations if requested. "
-                            "Example: Get deployment spec: k8_object_name='Deployment/cart'. "
-                            "Example: Get pod spec: k8_object_name='Pod/frontend-abc123'. "
+                            "For ambiguous formats (kind/name or name), returns ALL matching resources. "
+                            "Example (preferred): k8_object_name='otel-demo/Service/cart'. "
+                            "Example (ambiguous): k8_object_name='Service/cart' - returns all Services named 'cart' across namespaces. "
                             "Useful for: inspecting current resource configuration, debugging deployments.",
                 inputSchema={
                     "type": "object",
@@ -631,7 +634,7 @@ def register_tools(server: Server) -> None:
                         },
                         "k8_object_name": {
                             "type": "string",
-                            "description": "K8s resource name in Kind/name format (e.g., 'Deployment/cart', 'Pod/frontend-xyz', 'Service/checkout')"
+                            "description": "K8s resource identifier. Formats: 'namespace/kind/name' (PREFERRED, e.g., 'otel-demo/Deployment/cart'), 'kind/name' (ambiguous, e.g., 'Deployment/cart'), or 'name' (most ambiguous)"
                         },
                         "return_all_observations": {
                             "type": "boolean",
@@ -682,6 +685,144 @@ def register_tools(server: Server) -> None:
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
+def _parse_k8_object_identifier(identifier: str) -> dict[str, Any]:
+    """Parse a K8s object identifier supporting multiple formats.
+    
+    Supported formats (in order of preference):
+    1. namespace/kind/name - PREFERRED (most specific, unambiguous)
+    2. kind/name - DISCOURAGED (can exist in multiple namespaces)
+    3. name - DISCOURAGED (can exist in multiple kinds and namespaces)
+    
+    Args:
+        identifier: K8s object identifier string
+        
+    Returns:
+        Dictionary with:
+        - namespace: str | None
+        - kind: str | None  
+        - name: str
+        - format: "namespace/kind/name" | "kind/name" | "name"
+        - is_ambiguous: bool (True for kind/name and name formats)
+        - warning: str | None (warning message for ambiguous formats)
+    """
+    if not identifier:
+        return {
+            "namespace": None,
+            "kind": None,
+            "name": "",
+            "format": "invalid",
+            "is_ambiguous": True,
+            "warning": "Empty identifier provided"
+        }
+    
+    parts = [p.strip() for p in identifier.split("/") if p.strip()]
+    
+    if len(parts) >= 3:
+        # namespace/kind/name format (preferred)
+        # Handle cases where name might contain slashes
+        namespace = parts[0]
+        kind = parts[1]
+        name = "/".join(parts[2:])
+        return {
+            "namespace": namespace,
+            "kind": kind,
+            "name": name,
+            "format": "namespace/kind/name",
+            "is_ambiguous": False,
+            "warning": None
+        }
+    elif len(parts) == 2:
+        # kind/name format (discouraged - ambiguous across namespaces)
+        kind = parts[0]
+        name = parts[1]
+        return {
+            "namespace": None,
+            "kind": kind,
+            "name": name,
+            "format": "kind/name",
+            "is_ambiguous": True,
+            "warning": f"Format 'kind/name' is ambiguous - '{identifier}' may exist in multiple namespaces. Consider using 'namespace/kind/name' format for precision."
+        }
+    else:
+        # name only format (most ambiguous)
+        name = parts[0]
+        return {
+            "namespace": None,
+            "kind": None,
+            "name": name,
+            "format": "name",
+            "is_ambiguous": True,
+            "warning": f"Format 'name' is highly ambiguous - '{identifier}' may exist across multiple kinds and namespaces. Consider using 'namespace/kind/name' format for precision."
+        }
+
+
+def _build_k8_object_filter_mask(
+    df: "pd.DataFrame",
+    parsed_id: dict[str, Any],
+    kind_col: str = "object_kind",
+    namespace_col: str = "object_namespace",
+    name_col: str = "object_name",
+    entity_id_col: str | None = "entity_id"
+) -> "pd.Series":
+    """Build a pandas filter mask for K8s objects based on parsed identifier.
+    
+    For unambiguous identifiers (namespace/kind/name), returns exact match.
+    For ambiguous identifiers (kind/name or name), returns ALL matches.
+    
+    Args:
+        df: DataFrame with K8s object data
+        parsed_id: Output from _parse_k8_object_identifier()
+        kind_col: Column name for object kind
+        namespace_col: Column name for namespace
+        name_col: Column name for object name
+        entity_id_col: Optional column name for entity_id (for fallback matching)
+        
+    Returns:
+        Boolean pandas Series mask
+    """
+    import pandas as pd
+    
+    namespace = parsed_id.get("namespace")
+    kind = parsed_id.get("kind")
+    name = parsed_id.get("name", "")
+    fmt = parsed_id.get("format")
+    
+    if fmt == "namespace/kind/name":
+        # Most specific - exact match on all three
+        mask = (
+            (df[kind_col].str.lower() == kind.lower()) &
+            (df[namespace_col].str.lower() == namespace.lower()) &
+            (df[name_col].str.lower() == name.lower())
+        )
+    elif fmt == "kind/name":
+        # Match kind and name, any namespace (return all matches)
+        mask = (
+            (df[kind_col].str.lower() == kind.lower()) &
+            (df[name_col].str.lower() == name.lower())
+        )
+    elif fmt == "name":
+        # Match name only, any kind and namespace (return all matches)
+        mask = (df[name_col].str.lower() == name.lower())
+    else:
+        # Invalid format - return empty mask
+        mask = pd.Series([False] * len(df), index=df.index)
+    
+    # If no matches found, try partial/contains match on entity_id as fallback
+    if not mask.any() and entity_id_col and entity_id_col in df.columns:
+        search_term = name.lower()
+        mask = df[entity_id_col].str.lower().str.contains(search_term, na=False)
+    
+    return mask
+
+
+def _get_matched_entities_summary(df: "pd.DataFrame", mask: "pd.Series", entity_id_col: str = "entity_id") -> list[str]:
+    """Get a summary of matched entity IDs for reporting."""
+    if entity_id_col not in df.columns:
+        return []
+    matched = df.loc[mask, entity_id_col].unique().tolist()
+    return sorted(matched)
+
 
 def _parse_time(ts: str) -> datetime:
     """Parse timestamp string to datetime object."""
@@ -1726,9 +1867,23 @@ async def _metric_analysis(args: dict[str, Any]) -> list[TextContent]:
     
     # Determine which files to load
     if k8_object_name:
-        # Specific object requested
-        try:
-            kind, name = k8_object_name.split("/", 1)
+        # Specific object requested - supports namespace/kind/name, kind/name, or name formats
+        parsed_id = _parse_k8_object_identifier(k8_object_name)
+        
+        if parsed_id["format"] == "invalid":
+            return [TextContent(type="text", text=parsed_id.get("warning", "Invalid identifier"))]
+        
+        kind = parsed_id.get("kind")
+        name = parsed_id.get("name", "")
+        
+        if not kind:
+            # Name-only format - try to infer from file patterns
+            # Search all files matching *_{name}*.tsv
+            files = list(base_path.glob(f"*_{name}*.tsv"))
+            if not files:
+                # Try without underscore
+                files = list(base_path.glob(f"*{name}*.tsv"))
+        else:
             # Try multiple name patterns to handle naming variations
             # e.g., "product-catalog-service" -> try "product-catalog-service", "product-catalog"
             name_variants = [name]
@@ -1742,8 +1897,6 @@ async def _metric_analysis(args: dict[str, Any]) -> list[TextContent]:
                 files = list(base_path.glob(f"{prefix}*.tsv"))
                 if files:
                     break
-        except ValueError:
-            return [TextContent(type="text", text="Invalid k8_object_name format. Use '<kind>/<name>'")]
     else:
         # Batch mode: use object_pattern
         # Convert "pod/*" to "pod_*.tsv", "pod/frontend*" to "pod_frontend*.tsv"
@@ -2148,26 +2301,35 @@ async def _get_metric_anomalies(args: dict[str, Any]) -> list[TextContent]:
     if not base_path.exists():
         return [TextContent(type="text", text=f"Metrics directory not found: {base_dir}")]
     
-    # Parse kind and name
-    try:
-        kind, name = k8_object_name.split("/", 1)
-    except ValueError:
-        return [TextContent(type="text", text="Invalid k8_object_name format. Use '<kind>/<name>'")]
+    # Parse kind and name - supports namespace/kind/name, kind/name, or name formats
+    parsed_id = _parse_k8_object_identifier(k8_object_name)
+    
+    if parsed_id["format"] == "invalid":
+        return [TextContent(type="text", text=parsed_id.get("warning", "Invalid identifier"))]
+    
+    kind = parsed_id.get("kind")
+    name = parsed_id.get("name", "")
     
     # Find relevant files
-    # Try multiple name patterns to handle naming variations
-    # e.g., "product-catalog-service" -> try "product-catalog-service", "product-catalog"
-    name_variants = [name]
-    for suffix in ["-service", "_service", "-svc", "_svc"]:
-        if name.endswith(suffix):
-            name_variants.append(name[:-len(suffix)])
-    
-    files = []
-    for variant in name_variants:
-        prefix = f"{kind.lower()}_{variant}"
-        files = list(base_path.glob(f"{prefix}*.tsv"))
-        if files:
-            break
+    if not kind:
+        # Name-only format - try to find files matching *_{name}*.tsv
+        files = list(base_path.glob(f"*_{name}*.tsv"))
+        if not files:
+            files = list(base_path.glob(f"*{name}*.tsv"))
+    else:
+        # Try multiple name patterns to handle naming variations
+        # e.g., "product-catalog-service" -> try "product-catalog-service", "product-catalog"
+        name_variants = [name]
+        for suffix in ["-service", "_service", "-svc", "_svc"]:
+            if name.endswith(suffix):
+                name_variants.append(name[:-len(suffix)])
+        
+        files = []
+        for variant in name_variants:
+            prefix = f"{kind.lower()}_{variant}"
+            files = list(base_path.glob(f"{prefix}*.tsv"))
+            if files:
+                break
     
     if not files:
         return [TextContent(type="text", text=f"No metric files found for {k8_object_name}")]
@@ -2554,24 +2716,43 @@ async def _log_analysis(args: dict[str, Any]) -> list[TextContent]:
         except Exception:
             return {}
     
-    # Extract k8s metadata if we need to filter by k8_object
-    if k8_object or 'ResourceAttributes' in df.columns:
+    # Extract k8s metadata for filtering
+    # Support two log formats:
+    # 1. Raw OTEL format: ResourceAttributes column with nested k8s metadata
+    # 2. Processed format: separate k8s_pod_name, k8s_namespace, service_name columns
+    if 'ResourceAttributes' in df.columns:
         k8s_metadata = df['ResourceAttributes'].apply(extract_k8s_metadata)
         df['_deployment'] = k8s_metadata.apply(lambda x: x.get('deployment', ''))
         df['_pod'] = k8s_metadata.apply(lambda x: x.get('pod', ''))
         df['_namespace'] = k8s_metadata.apply(lambda x: x.get('namespace', ''))
+    else:
+        # Use pre-extracted columns if available (processed format)
+        df['_deployment'] = df.get('k8s_deployment_name', df.get('deployment', pd.Series([''] * len(df))))
+        df['_pod'] = df.get('k8s_pod_name', df.get('pod_name', pd.Series([''] * len(df))))
+        df['_namespace'] = df.get('k8s_namespace', df.get('namespace', pd.Series([''] * len(df))))
+        # Fill NaN values
+        df['_deployment'] = df['_deployment'].fillna('')
+        df['_pod'] = df['_pod'].fillna('')
+        df['_namespace'] = df['_namespace'].fillna('')
     
-    # Filter by k8_object (Kind/name format)
+    # Filter by k8_object - supports namespace/kind/name, kind/name, or name formats
     if k8_object:
-        try:
-            kind, name = k8_object.split("/", 1)
+        parsed_id = _parse_k8_object_identifier(k8_object)
+        
+        if parsed_id["format"] == "invalid":
+            return [TextContent(type="text", text=parsed_id.get("warning", "Invalid identifier"))]
+        
+        kind = parsed_id.get("kind")
+        name = parsed_id.get("name", "")
+        # namespace from parsed_id can be used for additional filtering if needed
+        
+        name_variants = [name.lower()]
+        for suffix in ["-service", "_service", "-svc", "_svc"]:
+            if name.lower().endswith(suffix):
+                name_variants.append(name.lower()[:-len(suffix)])
+        
+        if kind:
             kind_lower = kind.lower()
-            
-            name_variants = [name.lower()]
-            for suffix in ["-service", "_service", "-svc", "_svc"]:
-                if name.lower().endswith(suffix):
-                    name_variants.append(name.lower()[:-len(suffix)])
-            
             if kind_lower in ["deployment", "deploy"]:
                 mask = df['_deployment'].str.lower().isin(name_variants)
             elif kind_lower == "pod":
@@ -2584,10 +2765,14 @@ async def _log_analysis(args: dict[str, Any]) -> list[TextContent]:
                 svc_mask = df['ServiceName'].str.lower().isin(name_variants) if 'ServiceName' in df.columns else pd.Series([False] * len(df))
                 deploy_mask = df['_deployment'].str.lower().isin(name_variants)
                 mask = svc_mask | deploy_mask
-            
-            df = df[mask]
-        except ValueError:
-            return [TextContent(type="text", text=f"Invalid k8_object format: '{k8_object}'. Use 'Kind/name' format.")]
+        else:
+            # Name-only format - search across all k8s metadata fields
+            svc_mask = df['ServiceName'].str.lower().isin(name_variants) if 'ServiceName' in df.columns else pd.Series([False] * len(df))
+            deploy_mask = df['_deployment'].str.lower().isin(name_variants)
+            pod_mask = df['_pod'].str.lower().str.contains('|'.join(name_variants), na=False, regex=True)
+            mask = svc_mask | deploy_mask | pod_mask
+        
+        df = df[mask]
     
     # Filter by service_name
     if service_name and 'ServiceName' in df.columns:
@@ -4327,17 +4512,21 @@ async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
 
     # Normalize columns
     df["object_kind"] = df["object_kind"].fillna("").astype(str)
+    # Handle namespace column - could be 'object_namespace' or 'namespace'
     if "object_namespace" not in df.columns:
-        df["object_namespace"] = ""
+        if "namespace" in df.columns:
+            df["object_namespace"] = df["namespace"]
+        else:
+            df["object_namespace"] = ""
     df["object_namespace"] = df["object_namespace"].fillna("").astype(str)
     df["object_name"] = df["object_name"].fillna("").astype(str)
-    # Prefer Kind/namespace/name for namespaced resources; Kind/name for cluster-scoped.
+    # Use namespace/kind/name for namespaced resources; kind/name for cluster-scoped.
     df["entity_id"] = df["object_kind"] + "/" + df["object_name"]
     _ns_mask = df["object_namespace"].astype(str) != ""
     df.loc[_ns_mask, "entity_id"] = (
-        df.loc[_ns_mask, "object_kind"]
+        df.loc[_ns_mask, "object_namespace"]
         + "/"
-        + df.loc[_ns_mask, "object_namespace"]
+        + df.loc[_ns_mask, "object_kind"]
         + "/"
         + df.loc[_ns_mask, "object_name"]
     )
@@ -4363,15 +4552,28 @@ async def _k8s_spec_change_analysis(args: dict[str, Any]) -> list[TextContent]:
         df["k8s_deletion_ts"] = meta_extracted["k8s_deletion_ts"]
     
     # Filter by specific object if provided
+    # Supports formats: namespace/kind/name (preferred), kind/name, or name
     if k8_object_name:
-        # Support both exact match and case-insensitive partial match
-        mask = (df['entity_id'].str.lower() == k8_object_name.lower())
-        if not mask.any():
-            # Try partial match
-            mask = df['entity_id'].str.lower().str.contains(k8_object_name.lower(), na=False)
+        parsed_id = _parse_k8_object_identifier(k8_object_name)
+        
+        if parsed_id["format"] == "invalid":
+            return _json_error(parsed_id.get("warning", "Invalid identifier"))
+        
+        mask = _build_k8_object_filter_mask(
+            df, parsed_id,
+            kind_col="object_kind",
+            namespace_col="object_namespace",
+            name_col="object_name",
+            entity_id_col="entity_id"
+        )
         df = df[mask]
+        
         if df.empty:
-            return _json_error(f"No objects matching '{k8_object_name}' found")
+            sample_entities = df['entity_id'].unique().tolist()[:10] if not df.empty else []
+            return _json_error(
+                f"No objects matching '{k8_object_name}' found. "
+                f"Try using 'namespace/kind/name' format for precision."
+            )
     
     # Parse timestamp (only for processed format; raw format already normalized above)
     if not is_raw_otel:
@@ -4960,9 +5162,14 @@ async def _get_k8_spec(args: dict[str, Any]) -> list[TextContent]:
     """Retrieve the Kubernetes spec for a specific resource.
     
     Reads k8s_objects_raw.tsv (or similar TSV file) and returns the spec
-    for the specified resource in Kind/name format.
+    for the specified resource.
     
-    Supports two input formats:
+    Supports identifier formats:
+    - namespace/kind/name (PREFERRED - unambiguous)
+    - kind/name (returns all matches across namespaces)
+    - name (returns all matches across kinds and namespaces)
+    
+    Supports two TSV input formats:
     1) Processed format: columns timestamp, object_kind, object_name, body
     2) Raw OTEL format: columns Timestamp/TimestampTime, Body (JSON with kind/metadata.name)
     """
@@ -4989,7 +5196,7 @@ async def _get_k8_spec(args: dict[str, Any]) -> list[TextContent]:
         return _json_error("k8s_objects_file is required")
     
     if not k8_object_name:
-        return _json_error("k8_object_name is required (format: Kind/name, e.g., 'Deployment/cart')")
+        return _json_error("k8_object_name is required. Formats: 'namespace/kind/name' (preferred), 'kind/name', or 'name'")
     
     if not Path(k8s_objects_file).exists():
         return _json_error(f"K8s objects file not found: {k8s_objects_file}")
@@ -5060,67 +5267,66 @@ async def _get_k8_spec(args: dict[str, Any]) -> list[TextContent]:
             else:
                 return _json_error("Unsupported k8s objects format: missing 'body' column")
         df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
+        # Handle namespace column - could be 'object_namespace' or 'namespace'
         if "object_namespace" not in df.columns:
-            df["object_namespace"] = ""
+            if "namespace" in df.columns:
+                df["object_namespace"] = df["namespace"]
+            else:
+                df["object_namespace"] = ""
 
     # Normalize columns
     df["object_kind"] = df["object_kind"].fillna("").astype(str)
     df["object_namespace"] = df["object_namespace"].fillna("").astype(str)
     df["object_name"] = df["object_name"].fillna("").astype(str)
     
-    # Build entity_id: Kind/namespace/name for namespaced, Kind/name for cluster-scoped
+    # Build entity_id: namespace/kind/name for namespaced, kind/name for cluster-scoped
+    # Note: We use namespace/kind/name as the canonical format (not kind/namespace/name)
     df["entity_id"] = df["object_kind"] + "/" + df["object_name"]
     _ns_mask = df["object_namespace"].astype(str) != ""
     df.loc[_ns_mask, "entity_id"] = (
-        df.loc[_ns_mask, "object_kind"]
+        df.loc[_ns_mask, "object_namespace"]
         + "/"
-        + df.loc[_ns_mask, "object_namespace"]
+        + df.loc[_ns_mask, "object_kind"]
         + "/"
         + df.loc[_ns_mask, "object_name"]
     )
     
     # -------------------------------------------------------------------------
-    # Filter by the requested object
+    # Filter by the requested object using flexible identifier parsing
     # -------------------------------------------------------------------------
-    # Support multiple matching strategies:
-    # 1. Exact match on entity_id (Kind/name or Kind/namespace/name)
-    # 2. Match Kind/name even if entity has namespace (for convenience)
-    # 3. Case-insensitive partial match as fallback
+    # Supported formats:
+    # - namespace/kind/name (PREFERRED - unambiguous)
+    # - kind/name (ambiguous - returns all matches across namespaces)
+    # - name (most ambiguous - returns all matches)
     
-    # Parse the requested k8_object_name
-    parts = k8_object_name.split("/")
-    if len(parts) < 2:
-        return _json_error(f"Invalid k8_object_name format: '{k8_object_name}'. Expected Kind/name or Kind/namespace/name")
+    parsed_id = _parse_k8_object_identifier(k8_object_name)
     
-    req_kind = parts[0]
-    req_name = parts[-1]  # Last part is always the name
-    req_namespace = parts[1] if len(parts) == 3 else None
+    if parsed_id["format"] == "invalid":
+        return _json_error(parsed_id.get("warning", "Invalid identifier"))
     
-    # Try exact match first
-    mask = (df['entity_id'].str.lower() == k8_object_name.lower())
-    
-    if not mask.any():
-        # Try matching Kind/name where namespace could be anything
-        mask = (
-            (df['object_kind'].str.lower() == req_kind.lower()) &
-            (df['object_name'].str.lower() == req_name.lower())
-        )
-        if req_namespace:
-            mask = mask & (df['object_namespace'].str.lower() == req_namespace.lower())
-    
-    if not mask.any():
-        # Try partial/contains match as last resort
-        mask = df['entity_id'].str.lower().str.contains(k8_object_name.lower(), na=False)
+    # Build filter mask using the helper
+    mask = _build_k8_object_filter_mask(
+        df, parsed_id,
+        kind_col="object_kind",
+        namespace_col="object_namespace", 
+        name_col="object_name",
+        entity_id_col="entity_id"
+    )
     
     filtered_df = df[mask]
     
     if filtered_df.empty:
         # Provide helpful error with available entities
         available_kinds = df['object_kind'].unique().tolist()[:20]
+        sample_entities = df['entity_id'].unique().tolist()[:10]
         return _json_error(
             f"No objects matching '{k8_object_name}' found. "
-            f"Available kinds: {available_kinds}"
+            f"Available kinds: {available_kinds}. "
+            f"Sample entities: {sample_entities}"
         )
+    
+    # Get list of matched entities for reporting
+    matched_entities = _get_matched_entities_summary(df, mask, "entity_id")
     
     # Sort by timestamp to get chronological order
     filtered_df = filtered_df.sort_values("timestamp", ascending=True)
@@ -5152,26 +5358,69 @@ async def _get_k8_spec(args: dict[str, Any]) -> list[TextContent]:
     if not observations:
         return _json_error(f"No valid specs found for '{k8_object_name}'")
     
-    # Build output
-    if return_all_observations:
-        output = {
-            "k8s_objects_file": k8s_objects_file,
-            "k8_object_name": k8_object_name,
-            "input_format": "raw_otel" if is_raw_otel else "processed",
-            "found": True,
-            "observation_count": len(observations),
-            "first_timestamp": observations[0]["timestamp"],
-            "last_timestamp": observations[-1]["timestamp"],
-            "observations": observations,
-        }
+    # Build output with metadata about the query
+    base_output = {
+        "k8s_objects_file": k8s_objects_file,
+        "k8_object_name": k8_object_name,
+        "identifier_format": parsed_id["format"],
+        "input_format": "raw_otel" if is_raw_otel else "processed",
+        "found": True,
+    }
+    
+    # Add warning for ambiguous formats
+    if parsed_id["is_ambiguous"] and parsed_id.get("warning"):
+        base_output["warning"] = parsed_id["warning"]
+    
+    # Add matched entities info (especially useful for ambiguous queries)
+    if len(matched_entities) > 1:
+        base_output["matched_entities"] = matched_entities
+        base_output["matched_entity_count"] = len(matched_entities)
+    
+    # Group observations by entity_id for multi-entity responses
+    unique_entities = filtered_df['entity_id'].unique().tolist()
+    
+    if return_all_observations or len(unique_entities) > 1:
+        # Return all observations (grouped by entity if multiple)
+        if len(unique_entities) > 1:
+            # Multiple entities matched - group by entity
+            entities_data = {}
+            for entity_id in unique_entities:
+                entity_obs = [o for o in observations if o["entity_id"] == entity_id]
+                if entity_obs:
+                    latest = entity_obs[-1]
+                    entities_data[entity_id] = {
+                        "kind": latest["kind"],
+                        "namespace": latest["namespace"],
+                        "name": latest["name"],
+                        "observation_count": len(entity_obs),
+                        "first_timestamp": entity_obs[0]["timestamp"],
+                        "last_timestamp": entity_obs[-1]["timestamp"],
+                        "latest_spec": latest["spec"],
+                        "all_observations": entity_obs if return_all_observations else None,
+                    }
+                    # Remove None values
+                    entities_data[entity_id] = {k: v for k, v in entities_data[entity_id].items() if v is not None}
+            
+            output = {
+                **base_output,
+                "entity_count": len(unique_entities),
+                "total_observation_count": len(observations),
+                "entities": entities_data,
+            }
+        else:
+            # Single entity with all observations
+            output = {
+                **base_output,
+                "observation_count": len(observations),
+                "first_timestamp": observations[0]["timestamp"],
+                "last_timestamp": observations[-1]["timestamp"],
+                "observations": observations,
+            }
     else:
-        # Return only the latest observation
+        # Return only the latest observation for single entity
         latest = observations[-1]
         output = {
-            "k8s_objects_file": k8s_objects_file,
-            "k8_object_name": k8_object_name,
-            "input_format": "raw_otel" if is_raw_otel else "processed",
-            "found": True,
+            **base_output,
             "observation_count": len(observations),
             "timestamp": latest["timestamp"],
             "entity_id": latest["entity_id"],
@@ -5290,22 +5539,16 @@ async def _get_context_contract(args: dict[str, Any]) -> list[TextContent]:
     if topology_file:
         files["topology_file"] = Path(topology_file)
     
-    # Parse entity kind/namespace/name.
-    # Accept:
-    # - Kind/name
-    # - Kind/namespace/name
-    # (and tolerate extra slashes in name by joining remainder)
-    parts = [p for p in str(k8_object).split("/") if p]
-    entity_kind = parts[0] if parts else "Unknown"
-    entity_namespace: str | None = None
-    entity_short_name = ""
-    if len(parts) == 2:
-        entity_short_name = parts[1]
-    elif len(parts) >= 3:
-        entity_namespace = parts[1]
-        entity_short_name = "/".join(parts[2:])
-    else:
-        entity_short_name = k8_object
+    # Parse entity identifier using flexible format support
+    # Accepts:
+    # - namespace/kind/name (PREFERRED - unambiguous)
+    # - kind/name (ambiguous - may match multiple namespaces)
+    # - name (most ambiguous)
+    parsed_id = _parse_k8_object_identifier(k8_object)
+    
+    entity_kind = parsed_id.get("kind") or "Unknown"
+    entity_namespace = parsed_id.get("namespace")
+    entity_short_name = parsed_id.get("name", "")
 
     # Name used for searching/filtering across traces/metrics/events (usually service/deploy name).
     entity_search_name = entity_short_name
@@ -5314,9 +5557,14 @@ async def _get_context_contract(args: dict[str, Any]) -> list[TextContent]:
         f"{entity_namespace}/{entity_short_name}" if entity_namespace else entity_short_name
     )
     
+    # Include format warning in result if identifier is ambiguous
+    id_format_warning = parsed_id.get("warning")
+    
     result: dict[str, Any] = {
         "entity": k8_object,
+        "identifier_format": parsed_id.get("format"),
         "kind": entity_kind,
+        "namespace": entity_namespace,
         "name": entity_display_name,
         "page": page,
         "snapshot_dir": str(snapshot_dir),
@@ -5326,6 +5574,10 @@ async def _get_context_contract(args: dict[str, Any]) -> list[TextContent]:
         },
         "files_found": {k: str(v) if v else None for k, v in files.items()},
     }
+    
+    # Add warning for ambiguous identifiers
+    if id_format_warning:
+        result["identifier_warning"] = id_format_warning
     
     # ========== GET DEPENDENCIES (Always needed for pagination info) ==========
     # Strategy: Direct deps (hop 0) + One transitive hop (hop 1)

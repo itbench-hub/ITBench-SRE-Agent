@@ -143,3 +143,14 @@ wire_api = "chat"
 # log_user_prompt = true
 # exporter = { otlp-http = { endpoint = "http://localhost:4318/v1/logs", protocol = "binary" } }
 
+
+[model_providers.together]
+base_url = "https://api.together.xyz/v1"
+env_key = "TOGETHER_API_KEY"
+max_output_tokens = 16384
+model_verbosity = "high"
+name = "ETE LITELLM PROXY"
+request_max_retries = 40
+stream_idle_timeout_ms = 300000                                # 5m idle timeout
+stream_max_retries = 40
+wire_api = "chat"                                              # Use "responses" only for OpenAI models

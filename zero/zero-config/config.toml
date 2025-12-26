@@ -22,7 +22,7 @@ model_provider = "ete-bridge"              # Use default OpenAI provider
 # model = "aws/claude-opus-4-5" 
 
 # Reasoning configuration
-model_reasoning_effort = "high"        # Use high reasoning for root cause analysis
+model_reasoning_effort = "low"        # Use high reasoning for root cause analysis
 # model_reasoning_summary = "detailed"   # Get detailed reasoning summaries
 
 # Sandbox policy - allow writing to workspace and output directory

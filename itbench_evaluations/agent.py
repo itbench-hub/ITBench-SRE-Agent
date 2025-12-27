@@ -22,7 +22,8 @@ logger = logging.getLogger("itbench_evaluations.agent")
 
 EVAL_CRITERIA = [
     "ROOT_CAUSE_ENTITY",
-    "ROOT_CAUSE_ENTITY_K",
+    # ROOT_CAUSE_ENTITY_K removed - k-metrics are now computed mathematically 
+    # from per-entity matches in ROOT_CAUSE_ENTITY output
     "ROOT_CAUSE_REASONING",
     "PROPAGATION_CHAIN",
     "FAULT_LOCALIZATION",
@@ -30,6 +31,70 @@ EVAL_CRITERIA = [
     "ROOT_CAUSE_PROXIMITY",
     "ROOT_CAUSE_PROXIMITY_FP",
 ]
+
+# Default k values for which to compute entity@k metrics
+DEFAULT_K_VALUES = [1, 2, 3, 4, 5]
+
+
+def compute_entity_metrics_at_k(
+    predicted_entities: List[Dict[str, Any]],
+    gt_count: int,
+    k: int,
+) -> Dict[str, float]:
+    """Compute precision, recall, and F1 for the first k predicted entities.
+    
+    Args:
+        predicted_entities: Ordered list of predicted entities with 'matches_gt' boolean
+        gt_count: Total number of ground truth entities
+        k: Number of top predictions to consider
+        
+    Returns:
+        Dict with 'precision', 'recall', and 'f1' scores
+    """
+    if k <= 0 or gt_count <= 0:
+        return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+    
+    top_k = predicted_entities[:k]
+    tp = sum(1 for e in top_k if e.get("matches_gt", False))
+    
+    precision = tp / len(top_k) if len(top_k) > 0 else 0.0
+    recall = tp / gt_count
+    f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+    
+    return {
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+    }
+
+
+def compute_all_k_metrics(
+    root_cause_entity_result: Dict[str, Any],
+    k_values: List[int] = None,
+) -> Dict[int, Dict[str, float]]:
+    """Compute entity@k metrics for all specified k values from per-entity matches.
+    
+    Args:
+        root_cause_entity_result: The root_cause_entity score dict containing
+            'gt_entities' and 'predicted_entities' with per-entity match info
+        k_values: List of k values to compute metrics for (default: [1,2,3,4,5])
+        
+    Returns:
+        Dict mapping k value to metrics dict with precision/recall/f1
+    """
+    if k_values is None:
+        k_values = DEFAULT_K_VALUES
+    
+    predicted_entities = root_cause_entity_result.get("predicted_entities", [])
+    gt_entities = root_cause_entity_result.get("gt_entities", [])
+    gt_count = len(gt_entities)
+    
+    k_metrics = {}
+    for k in k_values:
+        k_metrics[k] = compute_entity_metrics_at_k(predicted_entities, gt_count, k)
+    
+    return k_metrics
+
 
 SEMANTIC_EVAL_CRITERIA = [
     "PROPAGATION_CHAIN",
@@ -44,7 +109,7 @@ SEMANTIC_EVAL_CRITERIA = [
 class EvaluationConfig:
     """Configuration for evaluation runs."""
     eval_criteria: Optional[List[str]] = None
-    k: int = 3  # for ROOT_CAUSE_ENTITY_K metric
+    k: int = 3  # Legacy parameter, no longer used (k-metrics computed from per-entity matches)
     max_retries: int = 5
     retry_delay_seconds: int = 70
     api_timeout_seconds: int = 300
@@ -123,6 +188,10 @@ class LAAJAgent:
         eval_output_formats = {}
         criterion_index = 1
         
+        # Initialize ROOT_CAUSE_ENTITY_K to empty (no longer uses LLM, computed mathematically)
+        eval_prompts["ROOT_CAUSE_ENTITY_K"] = ""
+        eval_output_formats["ROOT_CAUSE_ENTITY_K"] = ""
+        
         for criterion in EVAL_CRITERIA:
             if criterion in selected_criteria:
                 # Handle special formatting for certain criteria
@@ -148,10 +217,6 @@ class LAAJAgent:
                         entity_and_reasoning_steps = ""
                     eval_prompts[criterion] = self._get_eval_prompt(criterion).format(
                         id=criterion_index, entity_and_reasoning_steps=entity_and_reasoning_steps
-                    )
-                elif criterion == "ROOT_CAUSE_ENTITY_K":
-                    eval_prompts[criterion] = self._get_eval_prompt(criterion).format(
-                        id=criterion_index, k=k
                     )
                 else:
                     eval_prompts[criterion] = self._get_eval_prompt(criterion).format(
@@ -375,6 +440,33 @@ class LAAJAgent:
             result = self._process_response(response)
             result["incident_id"] = incident_id
             result["trial_id"] = trial_id
+            
+            # Compute k-metrics from per-entity matches if ROOT_CAUSE_ENTITY was evaluated
+            scores = result.get("scores", {})
+            root_cause_entity = scores.get("root_cause_entity", {})
+            if isinstance(root_cause_entity, dict) and "predicted_entities" in root_cause_entity:
+                # Compute metrics for all k values
+                k_metrics = compute_all_k_metrics(root_cause_entity, DEFAULT_K_VALUES)
+                
+                # Add k-metrics to scores in backward-compatible format
+                # Legacy format: root_cause_entity_k (uses k=3 by default for backward compat)
+                if 3 in k_metrics:
+                    scores["root_cause_entity_k"] = {
+                        "calculation_precision": k_metrics[3]["precision"],
+                        "calculation_recall": k_metrics[3]["recall"],
+                        "calculation_f1": k_metrics[3]["f1"],
+                    }
+                
+                # New format: root_cause_entity_k@{k} for each k value
+                for k, metrics in k_metrics.items():
+                    scores[f"root_cause_entity_k@{k}"] = {
+                        "calculation_precision": metrics["precision"],
+                        "calculation_recall": metrics["recall"],
+                        "calculation_f1": metrics["f1"],
+                    }
+                
+                result["scores"] = scores
+                logger.info(f"Computed entity@k metrics for k={list(k_metrics.keys())}")
             
             logger.info(f"Successfully evaluated incident {incident_id}, trial {trial_id}")
             return result

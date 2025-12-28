@@ -20,6 +20,12 @@ from . import prompts
 
 logger = logging.getLogger("itbench_evaluations.agent")
 
+
+class CalculationError(Exception):
+    """Raised when LLM-generated calculator expressions have syntax errors."""
+    pass
+
+
 EVAL_CRITERIA = [
     "ROOT_CAUSE_ENTITY",
     # ROOT_CAUSE_ENTITY_K removed - k-metrics are now computed mathematically 
@@ -273,8 +279,20 @@ class LAAJAgent:
             incident_specific_guidance=incident_guidance,
         )
     
-    def _process_response(self, content: str) -> Dict[str, Any]:
-        """Process LLM response: parse JSON and evaluate calculator expressions."""
+    def _process_response(self, content: str, raise_on_calc_error: bool = True) -> Dict[str, Any]:
+        """Process LLM response: parse JSON and evaluate calculator expressions.
+        
+        Args:
+            content: Raw LLM response content
+            raise_on_calc_error: If True, raise CalculationError on syntax errors in expressions.
+                                 If False, return 0 for failed expressions (legacy behavior).
+        
+        Returns:
+            Processed evaluation data with calculator expressions evaluated.
+            
+        Raises:
+            CalculationError: If raise_on_calc_error=True and expression evaluation fails.
+        """
         # Clean markdown code blocks
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()
@@ -293,6 +311,7 @@ class LAAJAgent:
         
         # Evaluate calculator_tool expressions
         pattern = re.compile(r'^calculator_tool\(expression=["\']([^"\']+)["\']\)$')
+        calc_errors = []  # Track calculation errors for potential retry
         
         def evaluate_expressions(obj):
             if isinstance(obj, dict):
@@ -308,11 +327,21 @@ class LAAJAgent:
                         logger.debug(f"Evaluated '{expr}' to {result}")
                         return result
                     except Exception as e:
-                        logger.error(f"Failed to evaluate expression '{expr}': {e}")
-                        return 0
+                        # Log the error with the expression for debugging
+                        print(f"{expr}")
+                        print(f"{type(e).__name__}: {e}")
+                        calc_errors.append((expr, e))
+                        return 0  # Return 0 for now, will raise later if needed
             return obj
         
-        return evaluate_expressions(data)
+        result = evaluate_expressions(data)
+        
+        # If there were calculation errors and we should raise, do so
+        if calc_errors and raise_on_calc_error:
+            error_details = "; ".join(f"'{expr}': {e}" for expr, e in calc_errors)
+            raise CalculationError(f"Failed to evaluate {len(calc_errors)} expression(s): {error_details}")
+        
+        return result
     
     async def _call_llm(
         self,
@@ -432,52 +461,76 @@ class LAAJAgent:
             ground_truth, agent_output, incident_id, selected_criteria
         )
         
-        try:
-            # Call LLM
-            response = await self._call_llm(system_prompt, user_prompt, config)
-            
-            # Process response
-            result = self._process_response(response)
-            result["incident_id"] = incident_id
-            result["trial_id"] = trial_id
-            
-            # Compute k-metrics from per-entity matches if ROOT_CAUSE_ENTITY was evaluated
-            scores = result.get("scores", {})
-            root_cause_entity = scores.get("root_cause_entity", {})
-            if isinstance(root_cause_entity, dict) and "predicted_entities" in root_cause_entity:
-                # Compute metrics for all k values
-                k_metrics = compute_all_k_metrics(root_cause_entity, DEFAULT_K_VALUES)
+        # Retry loop for both LLM call AND response processing (calculator errors)
+        max_calc_retries = 3
+        last_error = None
+        
+        for calc_attempt in range(max_calc_retries):
+            try:
+                # Call LLM
+                response = await self._call_llm(system_prompt, user_prompt, config)
                 
-                # Add k-metrics to scores in backward-compatible format
-                # Legacy format: root_cause_entity_k (uses k=3 by default for backward compat)
-                if 3 in k_metrics:
-                    scores["root_cause_entity_k"] = {
-                        "calculation_precision": k_metrics[3]["precision"],
-                        "calculation_recall": k_metrics[3]["recall"],
-                        "calculation_f1": k_metrics[3]["f1"],
-                    }
+                # Process response (may raise CalculationError on malformed expressions)
+                # On last attempt, don't raise - just return 0 for bad expressions
+                raise_on_calc_error = (calc_attempt < max_calc_retries - 1)
+                result = self._process_response(response, raise_on_calc_error=raise_on_calc_error)
+                result["incident_id"] = incident_id
+                result["trial_id"] = trial_id
                 
-                # New format: root_cause_entity_k@{k} for each k value
-                for k, metrics in k_metrics.items():
-                    scores[f"root_cause_entity_k@{k}"] = {
-                        "calculation_precision": metrics["precision"],
-                        "calculation_recall": metrics["recall"],
-                        "calculation_f1": metrics["f1"],
-                    }
+                # Compute k-metrics from per-entity matches if ROOT_CAUSE_ENTITY was evaluated
+                scores = result.get("scores", {})
+                root_cause_entity = scores.get("root_cause_entity", {})
+                if isinstance(root_cause_entity, dict) and "predicted_entities" in root_cause_entity:
+                    # Compute metrics for all k values
+                    k_metrics = compute_all_k_metrics(root_cause_entity, DEFAULT_K_VALUES)
+                    
+                    # Add k-metrics to scores in backward-compatible format
+                    # Legacy format: root_cause_entity_k (uses k=3 by default for backward compat)
+                    if 3 in k_metrics:
+                        scores["root_cause_entity_k"] = {
+                            "calculation_precision": k_metrics[3]["precision"],
+                            "calculation_recall": k_metrics[3]["recall"],
+                            "calculation_f1": k_metrics[3]["f1"],
+                        }
+                    
+                    # New format: root_cause_entity_k@{k} for each k value
+                    for k, metrics in k_metrics.items():
+                        scores[f"root_cause_entity_k@{k}"] = {
+                            "calculation_precision": metrics["precision"],
+                            "calculation_recall": metrics["recall"],
+                            "calculation_f1": metrics["f1"],
+                        }
+                    
+                    result["scores"] = scores
+                    logger.info(f"Computed entity@k metrics for k={list(k_metrics.keys())}")
                 
-                result["scores"] = scores
-                logger.info(f"Computed entity@k metrics for k={list(k_metrics.keys())}")
-            
-            logger.info(f"Successfully evaluated incident {incident_id}, trial {trial_id}")
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error evaluating incident {incident_id}: {e}", exc_info=True)
-            return {
-                "incident_id": incident_id,
-                "trial_id": trial_id,
-                "error": str(e),
-            }
+                logger.info(f"Successfully evaluated incident {incident_id}, trial {trial_id}")
+                return result
+                
+            except CalculationError as e:
+                last_error = e
+                logger.warning(
+                    f"Calculator expression error for {incident_id}/{trial_id} "
+                    f"(attempt {calc_attempt + 1}/{max_calc_retries}): {e}"
+                )
+                # Will retry with a fresh LLM call
+                continue
+                
+            except Exception as e:
+                logger.error(f"Error evaluating incident {incident_id}: {e}", exc_info=True)
+                return {
+                    "incident_id": incident_id,
+                    "trial_id": trial_id,
+                    "error": str(e),
+                }
+        
+        # If we exhausted retries due to CalculationError, return error result
+        logger.error(f"Failed to evaluate {incident_id}/{trial_id} after {max_calc_retries} attempts due to calculation errors")
+        return {
+            "incident_id": incident_id,
+            "trial_id": trial_id,
+            "error": f"Calculator expression errors after {max_calc_retries} retries: {last_error}",
+        }
 
 
 async def evaluate_single(

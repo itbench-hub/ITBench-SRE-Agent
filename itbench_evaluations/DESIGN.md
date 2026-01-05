@@ -262,10 +262,14 @@ The refactored architecture ensures:
 
 | Metric | Description |
 |--------|-------------|
-| `root_cause_entity_precision` | TP / (TP + FP) - what fraction of predictions were correct |
-| `root_cause_entity_recall` | TP / GT_count - what fraction of ground truth was found |
+| `root_cause_entity_precision` | Correct predictions / Total predictions |
+| `root_cause_entity_recall` | **Unique** GT entities found / Total GT entities |
 | `root_cause_entity_f1` | Harmonic mean of precision and recall |
 | `root_cause_entity_k@{k}_*` | Same metrics for top-k predictions (k=1,2,3,4,5) |
+
+**Important**: For recall, we count **unique** GT entities matched, not total matches.
+If 3 predictions all match the same 1 GT entity, recall = 1/1 = 1.0 (not 3/1 = 3.0).
+This is tracked via the `matched_to` field in `predicted_entities`.
 
 ### Other Metrics
 

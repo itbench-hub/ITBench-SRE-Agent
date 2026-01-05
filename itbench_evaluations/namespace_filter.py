@@ -77,19 +77,38 @@ def recalculate_entity_metrics(
     """Recalculate precision, recall, F1 from per-entity matches.
     
     Args:
-        predicted_entities: List with 'matches_gt' boolean for each entity
+        predicted_entities: List with 'matches_gt' boolean and optional 'matched_to' for each entity
         gt_count: Number of ground truth entities
         
     Returns:
         Dict with 'precision', 'recall', 'f1' scores
+        
+    Note:
+        - Precision = correct predictions / total predictions
+        - Recall = unique GT entities found / total GT entities
+        - Multiple predictions can match the same GT entity, but for recall
+          we only count each GT entity once.
     """
     if not predicted_entities or gt_count <= 0:
         return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
     
+    # Count correct predictions for precision
     tp = sum(1 for e in predicted_entities if e.get("matches_gt", False))
     
+    # Count UNIQUE GT entities found for recall
+    # Use 'matched_to' field if available, otherwise just count matches
+    unique_gt_matched: Set[str] = set()
+    for e in predicted_entities:
+        if e.get("matches_gt", False):
+            matched_to = e.get("matched_to")
+            if matched_to:
+                unique_gt_matched.add(matched_to)
+            else:
+                # If no matched_to field, count as 1 match (legacy behavior)
+                unique_gt_matched.add(f"_match_{len(unique_gt_matched)}")
+    
     precision = tp / len(predicted_entities) if len(predicted_entities) > 0 else 0.0
-    recall = tp / gt_count
+    recall = len(unique_gt_matched) / gt_count
     f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
     
     return {"precision": precision, "recall": recall, "f1": f1}

@@ -1,56 +1,23 @@
 # Zero Configuration
 # This file is copied to workspace/config.toml when running Zero
 
-# Set the default profile
 profile = "sre_support_engineer"
 
-# Note: experimental_instructions_file is NOT used because it's unreliable.
-# Instead, Zero passes prompts directly to codex exec via --prompt-file.
-
-# SRE Support Engineer Profile
-# For investigating Kubernetes incidents from captured snapshots
 [profiles.sre_support_engineer]
-
-# Model configuration
-# model = "Azure/gpt-5.1-2025-11-13"                           # Change to your preferred model
-# model = "GCP/gemini-2.5-pro"
-# model = "gcp/gemini-3-pro-preview"
-# model = "aws/claude-opus-4-1"
-# model = "openai/gpt-5.1"
-# model = "google/gemini-3-pro-preview"
-model_provider = "ete-bridge"              # Use default OpenAI provider
-# model = "aws/claude-opus-4-5" 
-
-# Reasoning configuration
-model_reasoning_effort = "low"        # Use high reasoning for root cause analysis
-# model_reasoning_summary = "detailed"   # Get detailed reasoning summaries
-
-# Sandbox policy - allow writing to workspace and output directory
+model_provider = "litellm"
+model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
-
-# Approval policy - execution policy (.codexpolicy) controls what's allowed
-# "never" = no prompts, execution policy handles allow/forbid decisions
-# Other options: "untrusted", "on-failure", "on-request"
 approval_policy = "never"
 
-# Additional writable directories for output storage
 [profiles.sre_support_engineer.sandbox_workspace_write]
-# Add the output directory where output.json will be stored
-# Update this path to your actual session directory
-writable_roots = [
-]
-# Allow network access if you need to query remote Kubernetes clusters
+writable_roots = []
 network_access = false
 
 # ============================================================================
-# MCP Servers - Tools available to the agent
+# MCP Servers
 # ============================================================================
 
 [mcp_servers.sre_utils]
-# SRE utility tools for incident investigation
-# Includes: alert_analysis, alert_summary, build_topology, event_analysis,
-#           get_context_contract, get_metric_anomalies, get_trace_error_tree,
-#           k8s_spec_change_analysis, metric_analysis, topology_analysis
 command = "python"
 args = ["-m", "sre_tools.cli.sre_utils"]
 
@@ -58,99 +25,14 @@ args = ["-m", "sre_tools.cli.sre_utils"]
 PYTHONPATH = "python"
 
 # ============================================================================
-# Model Provider Configuration
+# Model Provider - Local LiteLLM Proxy
 # ============================================================================
-#
-# ⚠️ IMPORTANT: wire_api Setting
-# ==============================
-# - "responses" = OpenAI Responses API (ONLY for OpenAI models)
-# - "chat"      = Chat Completions API (for ALL other models)
-#
-# If you use "responses" with non-OpenAI models (Claude, Gemini, etc.),
-# function calls will fail with empty arguments!
-#
-# Summary:
-#   OpenAI models (gpt-5.1, o4-mini, etc.)     → wire_api = "responses"
-#   Anthropic models (claude-*)                → wire_api = "chat"
-#   Google models (gemini-*)                   → wire_api = "chat"
-#   Other models (mistral, etc.)               → wire_api = "chat"
+# LiteLLM routes to OpenRouter (o3-mini, claude, gemini, etc.)
+# Run: uv run litellm --config config.yaml
 
-[model_providers.ete]
-name = "ETE LITELLM PROXY"
-base_url = "https://ete-litellm.ai-models.vpc-int.res.ibm.com"
-env_key = "ETE_API_KEY"
-wire_api = "chat"  # Use "responses" only for OpenAI models
-stream_idle_timeout_ms = 300000    # 5m idle timeout
-stream_max_retries = 40
-request_max_retries = 40
-max_output_tokens = 16384
-model_verbosity = "medium"
-
-# Local bridge in front of ETE proxy (Codex → bridge → ETE → Gemini)
-# Run: sre-proxy-bridge --upstream-base-url "https://ete-litellm.ai-models.vpc-int.res.ibm.com" --port 4280
-[model_providers.ete-bridge]
-name = "ETE Bridge (local)"
-base_url = "http://127.0.0.1:4280/v1"
-env_key = "ETE_API_KEY"
-wire_api = "chat"
-stream_idle_timeout_ms = 300000    # 5m idle timeout
-stream_max_retries = 40
-request_max_retries = 40
-max_output_tokens = 16384
-model_verbosity = "medium"
-
-[model_providers.openrouter]
-name = "openrouter"
-base_url = "https://openrouter.ai/api/v1"
-env_key = "OR_API_KEY"
-wire_api = "chat"  # Use "responses" only for openai/* models
-
-# ============================================================================
-# Azure OpenAI Configuration (Example)
-# ============================================================================
-# Uncomment and configure if you're using Azure OpenAI
-
-# [model_providers.azure]
-# name = "Azure OpenAI"
-# base_url = "https://YOUR_PROJECT_NAME.openai.azure.com/openai"
-# env_key = "AZURE_OPENAI_API_KEY"
-# query_params = { api-version = "2025-04-01-preview" }
-# wire_api = "responses"  # Azure OpenAI supports responses API
-
-# ============================================================================
-# LiteLLM Proxy Configuration (Example)
-# ============================================================================
-# Use this to connect to a self-hosted LiteLLM proxy server.
-# See: https://docs.litellm.ai/docs/proxy/quick_start
-
-[model_providers.litellm_proxy]
+[model_providers.litellm]
 name = "LiteLLM Proxy"
-base_url = "http://localhost:4000"       # Your LiteLLM proxy URL
-env_key = "LITELLM_API_KEY"                   # Or use OPENAI_API_KEY (depends on your proxy)
-wire_api = "chat"                             # Use "responses" only for OpenAI models/providers
-
-
-[model_providers.google]
-name = "google"
-base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
-env_key = "GOOGLE_API_KEY"
+base_url = "http://localhost:4000"
+# env_key = "DUMMY_KEY_NEED_NOT_BE_UPDATED"
 wire_api = "chat"
-# [otel]
-# OTEL tracing is configured automatically by Zero when --collect-traces is used.
-# If you want to enable it manually, use this format:
-#
-# [otel]
-# log_user_prompt = true
-# exporter = { otlp-http = { endpoint = "http://localhost:4318/v1/logs", protocol = "binary" } }
-
-
-[model_providers.together]
-base_url = "https://api.together.xyz/v1"
-env_key = "TOGETHER_API_KEY"
 max_output_tokens = 16384
-model_verbosity = "high"
-name = "ETE LITELLM PROXY"
-request_max_retries = 40
-stream_idle_timeout_ms = 300000                                # 5m idle timeout
-stream_max_retries = 40
-wire_api = "chat"                                              # Use "responses" only for OpenAI models

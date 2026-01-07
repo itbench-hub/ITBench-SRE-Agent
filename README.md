@@ -109,7 +109,25 @@ export JUDGE_MODEL="google/gemini-2.5-pro"
 
 ## Running Components
 
-### 1. Run Agent Independently (Zero)
+### 1. Running LiteLLM Proxy (Required)
+
+Before running agents, start the LiteLLM proxy in a separate terminal:
+```bash
+# Required environment variables for LiteLLM
+export OPENROUTER_API_KEY="your-openrouter-key"    # For OpenRouter-proxied models
+export OPENAI_API_KEY="your-openai-key"            # For direct OpenAI models
+
+# Start LiteLLM proxy (runs on http://localhost:4000 by default)
+litellm --config litellm_config.yaml
+
+# Or with a custom port
+litellm --config litellm_config.yaml --port 8080
+```
+
+Keep this terminal running while executing agent runs. The proxy provides a unified OpenAI-compatible endpoint for all configured models.
+
+
+### 2. Run Agent Independently (Zero)
 
 Zero is a thin wrapper around Codex CLI that handles workspace setup, prompt templating, and configuration.
 
@@ -137,7 +155,7 @@ python -m zero --workspace /tmp/work \
 
 📖 **Full documentation**: [zero/zero-config/README.md](./zero/zero-config/README.md)
 
-### 2. Run Judge Independently
+### 3. Run Judge Independently
 
 Evaluate agent outputs against ground truth using the `itbench_evaluations` judge (recommended via the `itbench-eval` CLI).
 
@@ -153,7 +171,7 @@ Notes:
 - `--ground-truth` can be either a directory like `./ITBench-Snapshots` (each subdir contains its own `ground_truth.yaml`) **or** a single consolidated JSON/YAML file.
 - Metrics are produced as floats in \([0,1]\) (precision/recall/F1); the leaderboard prints them as percentages.
 
-### 3. Run Leaderboard (Full Benchmark)
+### 4. Run Leaderboard (Full Benchmark)
 
 The leaderboard orchestrates running multiple agents across all scenarios with multiple runs for statistical significance.
 

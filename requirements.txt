@@ -1,8 +1,10 @@
 # ITBench SRE Agent Dependencies
 # Install with: pip install -r requirements.txt
+# Common
+litellm>=1.80.7
+litellm[proxy]>=1.80.7
 
 # Judge (LLM-as-a-Judge evaluation)
-litellm>=1.80.7
 openai>=1.0.0
 pyyaml>=6.0.0
 asteval>=1.0.0

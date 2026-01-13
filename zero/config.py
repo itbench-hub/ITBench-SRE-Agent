@@ -17,7 +17,7 @@ from pathlib import Path
 BUNDLED_CONFIG_DIR = Path(__file__).parent / "zero-config"
 
 # Default prompt template within the bundled config
-DEFAULT_PROMPT_TEMPLATE = BUNDLED_CONFIG_DIR / "prompts" / "tap.md"
+DEFAULT_PROMPT_TEMPLATE = BUNDLED_CONFIG_DIR / "prompts" / "react_shell_investigation.md"
 
 
 @dataclass

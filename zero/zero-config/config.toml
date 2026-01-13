@@ -17,11 +17,11 @@ network_access = false
 # MCP Servers
 # ============================================================================
 
-[mcp_servers.sre_utils]
+[mcp_servers.offline_incident_analysis]
 command = "python"
-args = ["-m", "sre_tools.cli.sre_utils"]
+args = ["-m", "sre_tools.offline_incident_analysis"]
 
-[mcp_servers.sre_utils.env]
+[mcp_servers.offline_incident_analysis.env]
 PYTHONPATH = "python"
 
 # ============================================================================

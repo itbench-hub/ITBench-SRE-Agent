@@ -17,8 +17,7 @@ dependencies = [
     "opentelemetry-proto>=1.24.0", # OTLP protobuf decoding
     # Leaderboard (connection testing)
     "requests>=2.28.0",
-    # Proxy bridge (async HTTP with connection pooling)
-    "aiohttp>=3.9.0",
+    "aiohttp>=3.9.0",  # Async HTTP for leaderboard
     # Config parsing (Python 3.11+ has tomllib built-in, fallback for older)
     "tomli>=2.0.0;python_version<'3.11'",
     "tomli_w>=1.0.0", # TOML writing
@@ -29,11 +28,11 @@ description = "ITBench SRE Agent - AI-powered incident investigation for SRE ben
 name = "itbench-sre-agent"
 optional-dependencies = { dev = ["black>=24.0.0", "isort>=5.13.0", "ruff>=0.1.0"] }
 requires-python = ">=3.12"
-scripts = { itbench-leaderboard = "itbench_leaderboard.cli:main", itbench-eval = "itbench_evaluations.__main__:main", zero = "zero.cli:main", sre-proxy-bridge = "proxy_bridge.server:main" }
+scripts = { itbench-leaderboard = "itbench_leaderboard.cli:main", itbench-eval = "itbench_evaluations.__main__:main", zero = "zero.cli:main" }
 version = "0.2.0"
 
 [tool.hatch.build.targets.wheel]
-packages = ["zero", "proxy_bridge", "sre_tools", "itbench_evaluations", "itbench_leaderboard"]
+packages = ["zero", "sre_tools", "itbench_evaluations", "itbench_leaderboard"]
 
 [tool.hatch.metadata]
 allow-direct-references = true

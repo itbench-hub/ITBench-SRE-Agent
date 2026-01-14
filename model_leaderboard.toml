@@ -36,39 +36,13 @@ collect_traces = true
 # ============================================================================
 # Judge Configuration
 # ============================================================================
-# The judge evaluates agent outputs against ground truth using litellm.
-# Supports all litellm providers: OpenAI, Azure, Anthropic, Google, LiteLLM proxy, etc.
-#
-# API key is read from environment based on provider:
-#   - openrouter: OR_API_KEY or OPENROUTER_API_KEY
-#   - openai: OPENAI_API_KEY
-#   - azure: AZURE_OPENAI_API_KEY
-#   - litellm_proxy: LITELLM_API_KEY or OPENAI_API_KEY
+# The judge evaluates agent outputs against ground truth.
+# Routed through local LiteLLM proxy for unified configuration
 
 [judge]
-model = "google/gemini-2.5-pro"
-provider = "openrouter"
-base_url = "https://openrouter.ai/api/v1"
-
-# --- Alternative Judge Configurations ---
-#
-# LiteLLM Proxy (self-hosted):
-# [judge]
-# model = "gpt-4"                          # Model name as configured in your proxy
-# provider = "litellm_proxy"
-# base_url = "http://localhost:4000"       # Your LiteLLM proxy URL
-#
-# OpenAI Direct:
-# [judge]
-# model = "gpt-4o"
-# provider = "openai"
-# base_url = "https://api.openai.com/v1"
-#
-# Azure OpenAI:
-# [judge]
-# model = "azure/gpt-4"                    # azure/<deployment_name>
-# provider = "azure"
-# base_url = "https://YOUR_RESOURCE.openai.azure.com"
+model = "gemini-2.5-pro"
+provider = "litellm_proxy"
+base_url = "http://localhost:4000"
 
 # ============================================================================
 # Agent Configurations
@@ -76,61 +50,67 @@ base_url = "https://openrouter.ai/api/v1"
 # Add agents to compare. Each agent runs on all scenarios.
 #
 # A run is uniquely identified by the combination of:
-#   1. prompt   - prompt identifier (e.g., "tap", "fs_code")
+#   1. prompt   - prompt identifier (e.g., "react_shell_investigation")
 #   2. commit   - git commit ID (auto-captured at runtime if not specified)
 #   3. model    - model name
 #
 # Results are stored at: leaderboard_dir/{prompt}_{model}_{commit}/{scenario}/
 #
-# Required environment variables:
-#   - OR_API_KEY: OpenRouter API key
-#   - ETE_API_KEY: ETE LiteLLM Proxy API key
-#   - AZURE_OPENAI_API_KEY: Azure OpenAI API key
+# ============================================================================
+# LiteLLM Proxy Configuration
+# ============================================================================
+# All agents AND judge use local LiteLLM proxy (http://localhost:4000)
+# The proxy routes to various upstream providers (OpenRouter, OpenAI, etc.)
+#
+# Start the proxy with: litellm --config litellm_config.yaml
+#
+# Required environment variables (for proxy operation):
+#   - OPENROUTER_API_KEY: For models routed through OpenRouter
+#   - OPENAI_API_KEY: For direct OpenAI models
+#
+# The connection test validates the entire chain: proxy → upstream APIs → inference
 
+# ============================================================================
+# Agent 1: GPT-5.2 (via LiteLLM proxy)
+# ============================================================================
 [[agents]]
-# --- Run Identifier (prompt + commit + model) ---
-prompt = "react with code"                                    # Prompt identifier (e.g., "tap", "fs_code")
-commit = ""                                       # Git commit ID (leave empty to auto-capture HEAD)
-model = "Azure/gpt-5.1-2025-11-13"                # Model name
+prompt = "react_shell_investigation"
+commit = ""                                       # Auto-capture HEAD
+model = "gpt-5.2-direct"                          # Model name in LiteLLM proxy
+provider = "litellm"                              # Uses bundled litellm config
+prompt_file = "./zero/zero-config/prompts/react_shell_investigation.md"
+wire_api = "responses"                            # OpenAI-compatible models
+user_query = "You must use the following application topology file is located at metadata/otel_demo_astronomy_shop/architecture.json. We want to explain alerts in otel-demo namespace only. Lets begin the investigation."
 
-# --- Model Configuration ---
-provider = "ete"
-prompt_file = "./zero/zero-config/prompts/fs_code.md"
-# wire_api: "chat" (default, works with most models) or "responses" (OpenAI models only)
-wire_api = "responses"
-# Optional: extra variables for prompt substitution (in addition to SNAPSHOT_DIRS)
-# [agents.variables]
-# MY_VAR = "value"
-# Optional: user query to append to agent run
-user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. We want to explain alerts in otel-demo namespace only. Lets begin the investigation."
+# ============================================================================
+# Agent 2: Gemini 2.5 Pro (via LiteLLM proxy)
+# ============================================================================
+[[agents]]
+prompt = "react_shell_investigation"
+commit = ""
+model = "gemini-2.5-pro"                          # Model name in LiteLLM proxy
+provider = "litellm"                              # Uses bundled litellm config
+prompt_file = "./zero/zero-config/prompts/react_shell_investigation.md"
+wire_api = "chat"                                 # Gemini requires chat format
+user_query = "You must use the following application topology file is located at metadata/otel_demo_astronomy_shop/architecture.json. We want to explain alerts in otel-demo namespace only. Lets begin the investigation."
 
-# # Uncomment to add more agents for comparison:
-
- [[agents]]
- prompt = "react with code"  
- name = "gemini-2.5-pro"
- model = "google/gemini-2.5-pro"
- provider = "openrouter"
- commit = ""
- prompt_file = "./zero/zero-config/prompts/fs_code.md"
- wire_api = "chat"  # Gemini uses chat format
- user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. We want to explain alerts in otel-demo namespace only. Lets begin the investigation."
-
-
+# ============================================================================
+# Additional Agent Examples (commented out)
+# ============================================================================
+# Add more models from your LiteLLM proxy by uncommenting and adjusting:
+#
 # [[agents]]
-# prompt = "react with code"   
-# model = "aws/claude-opus-4-5" #"anthropic/claude-opus-4"
-# commit = ""
-# provider = "ete"
-# prompt_file = "./zero/zero-config/prompts/fs_code.md"
-# wire_api = "chat"  # Claude uses chat format
-# user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. We want to explain alerts in otel-demo namespace only.  Lets begin the investigation."
-
+# prompt = "react_shell_investigation"
+# model = "gpt-5.2"                              # Another model from proxy
+# provider = "litellm"
+# prompt_file = "./zero/zero-config/prompts/react_shell_investigation.md"
+# wire_api = "responses"
+# user_query = "You must use the following application topology file is located at metadata/otel_demo_astronomy_shop/architecture.json. We want to explain alerts in otel-demo namespace only. Lets begin the investigation."
+#
 # [[agents]]
-# prompt = "react with code"  
-# commit = ""
-# model = "Azure/o4-mini"
-# provider = "ete"
-# prompt_file = "./zero/zero-config/prompts/fs_code.md"
-# wire_api = "responses"  # OpenAI models can use responses format
-# user_query = "You must use the following application topology file is located at /Users/saurabhjha/projects/open_source/sre_support_agent/datasets/application_code/otel_demo_application_architecture.json. We want to explain alerts in otel-demo namespace only.  Lets begin the investigation."
+# prompt = "react_shell_investigation"
+# model = "claude-4-5-opus-latest"               # Claude from proxy
+# provider = "litellm"
+# prompt_file = "./zero/zero-config/prompts/react_shell_investigation.md"
+# wire_api = "chat"                              # Claude uses chat format
+# user_query = "You must use the following application topology file is located at metadata/otel_demo_astronomy_shop/architecture.json. We want to explain alerts in otel-demo namespace only. Lets begin the investigation."

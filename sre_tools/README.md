@@ -21,14 +21,14 @@ This installs:
 
 ## Quick Start
 
-```bash
-# List all available tools
-python -m zero --list-tools
+The `offline_incident_analysis` MCP server is automatically configured when using Zero. You can also run it standalone:
 
-# Enable tools when running Zero
-python -m zero --session-dir /tmp/session --read-only-dir /path/to/scenario \
-  --tools sre_utils \
-  --tools kubernetes
+```bash
+# Run the MCP server directly (for testing)
+python -m sre_tools.offline_incident_analysis
+
+# Or use with Zero
+python -m zero --workspace /tmp/work --read-only-dir /path/to/scenario
 ```
 
 ## Available Tools
@@ -47,7 +47,7 @@ All tools that accept K8s object identifiers (`k8_object`, `k8_object_name`) sup
 
 ---
 
-### 1. `sre_utils` - SRE Utility Functions
+### 1. `offline_incident_analysis` - SRE Utility Functions
 
 **Type:** Local Python MCP Server (stdio)
 
@@ -71,9 +71,10 @@ Provides tools for building operational topology graphs and analyzing observabil
 
 #### Usage with Zero
 
+The `offline_incident_analysis` MCP server is automatically enabled via Zero's configuration:
+
 ```bash
-python -m zero --session-dir /tmp/session --read-only-dir /path/to/scenario \
-  --tools sre_utils
+python -m zero --workspace /tmp/work --read-only-dir /path/to/scenario
 ```
 
 #### Tool Details
@@ -771,17 +772,17 @@ You can test the tools directly using Python without running the Zero agent.
 
 ### Method 1: Command-Line Interface
 
-The `sre_utils` tools module has a built-in CLI with subcommands for each tool:
+The `offline_incident_analysis` tools module has a built-in CLI with subcommands for each tool:
 
 ```bash
 # List available tools
-python -m sre_tools.cli.sre_utils.tools --list
+python -m sre_tools.offline_incident_analysis.tools --list
 
 # Get help for a specific tool
-python -m sre_tools.cli.sre_utils.tools build_topology --help
+python -m sre_tools.offline_incident_analysis.tools build_topology --help
 
 # Run build_topology
-python -m sre_tools.cli.sre_utils.tools build_topology \
+python -m sre_tools.offline_incident_analysis.tools build_topology \
   --arch-file /path/to/app/arch.json \
   --k8s-objects-file /path/to/k8s_objects_otel-demo_chaos-mesh.tsv \
   --output-file /tmp/topology.json
@@ -790,7 +791,7 @@ python -m sre_tools.cli.sre_utils.tools build_topology \
 Example with actual scenario data:
 
 ```bash
-python -m sre_tools.cli.sre_utils.tools build_topology \
+python -m sre_tools.offline_incident_analysis.tools build_topology \
   --arch-file workspace/shared/application_architecture.json \
   --k8s-objects-file ./ITBench-Snapshots/snapshots/sre/v0.1-*/Scenario-105/k8s_objects_otel-demo_chaos-mesh.tsv \
   --output-file /tmp/topology.json
@@ -801,7 +802,7 @@ python -m sre_tools.cli.sre_utils.tools build_topology \
 Import and call the function directly in Python:
 
 ```python
-from sre_tools.cli.sre_utils.tools import build_topology_standalone
+from sre_tools.offline_incident_analysis.tools import build_topology_standalone
 
 # Build topology
 topology = build_topology_standalone(
@@ -826,7 +827,7 @@ Test the MCP server with the official MCP inspector:
 npm install -g @modelcontextprotocol/inspector
 
 # Run the MCP server with inspector
-npx @modelcontextprotocol/inspector python -m sre_tools.cli.sre_utils
+npx @modelcontextprotocol/inspector python -m sre_tools.offline_incident_analysis
 ```
 
 This opens a web UI where you can:
@@ -876,7 +877,8 @@ python -m zero --session-dir /tmp/session --tools kubernetes
 # Install globally
 npm install -g kubernetes-mcp-server
 
-# Then update manifest.toml to use the binary directly:
+# Then update zero/zero-config/config.toml:
+# [mcp_servers.kubernetes]
 # command = "kubernetes-mcp-server"
 # args = []
 ```
@@ -887,115 +889,98 @@ npm install -g kubernetes-mcp-server
 # Ensure kubectl is configured
 export KUBECONFIG=/path/to/kubeconfig
 
-# Run with kubernetes tool enabled
-python -m zero --session-dir /tmp/session --read-only-dir /path/to/scenario \
-  --tools kubernetes
+# Enable kubernetes in zero/zero-config/config.toml then run
+python -m zero --workspace /tmp/work --read-only-dir /path/to/scenario
 ```
 
 ---
 
-## HTTP-Based Tools (External Services)
+## Adding External MCP Servers
 
-These tools connect to external observability platforms. Uncomment and configure in `manifest.toml` as needed.
+You can add additional MCP servers (HTTP or stdio-based) to Zero's configuration.
 
-### Datadog
+### Example: Datadog Integration
 
-```toml
-[tools.datadog]
-description = "Datadog observability integration"
-type = "http"
-url = "https://mcp.datadoghq.com/mcp"
-bearer_token_env_var = "DATADOG_API_KEY"
-```
-
-**Setup:**
-```bash
-export DATADOG_API_KEY="your-api-key"
-python -m zero --session-dir /tmp/session --tools datadog
-```
-
-### Dynatrace
+Add to `zero/zero-config/config.toml`:
 
 ```toml
-[tools.dynatrace]
-description = "Dynatrace monitoring integration"
-type = "http"
-url = "https://your-instance.dynatrace.com/mcp"
-bearer_token_env_var = "DYNATRACE_API_TOKEN"
+[mcp_servers.datadog]
+command = "datadog-mcp-server"
+args = []
+
+[mcp_servers.datadog.env]
+DATADOG_API_KEY = "your-api-key"
 ```
 
-### Instana
+### Example: Custom HTTP MCP Server
 
 ```toml
-[tools.instana]
-description = "Instana APM integration"
+[mcp_servers.custom]
 type = "http"
-url = "https://your-tenant.instana.io/mcp"
-bearer_token_env_var = "INSTANA_API_TOKEN"
+url = "https://your-server.com/mcp"
+
+[mcp_servers.custom.env]
+API_TOKEN = "your-token"
 ```
 
 ---
 
 ## Configuration
 
-Tools are defined in `manifest.toml`. The manifest supports two types of MCP servers.
+### MCP Server Configuration
 
-### Placeholders
-
-The following placeholders are resolved at runtime:
-
-| Placeholder | Description |
-|-------------|-------------|
-| `{python}` | Current Python interpreter (`sys.executable`) |
-| `{workspace}` | Session directory path |
-| `{sre_tools}` | Path to sre_tools package |
-
-### stdio (Command-line) Servers
+The `offline_incident_analysis` MCP server is configured in Zero's `config.toml`:
 
 ```toml
-[tools.my_tool]
-description = "Tool description"
-type = "stdio"
-command = "{python}"           # Use current Python interpreter
-args = ["-m", "my_module"]
-cwd = "{workspace}"            # Optional: working directory
-env = { "VAR" = "value" }      # Optional: environment variables
-env_vars = ["PASSTHROUGH_VAR"] # Optional: env vars to whitelist
+[mcp_servers.offline_incident_analysis]
+command = "python"
+args = ["-m", "sre_tools.offline_incident_analysis"]
+
+[mcp_servers.offline_incident_analysis.env]
+PYTHONPATH = "."
 ```
 
-**Note:** For local Python tools using `sre_tools`, PYTHONPATH is automatically configured to find the package.
+### Tool Declaration
 
-### HTTP Servers
+Tools are declared in code using the MCP SDK. See [sre_tools/offline_incident_analysis/tools.py](sre_tools/offline_incident_analysis/tools.py) for implementation.
 
-```toml
-[tools.my_http_tool]
-description = "HTTP tool description"
-type = "http"
-url = "https://api.example.com/mcp"
-bearer_token_env_var = "API_KEY_ENV_VAR"
-http_headers = { "X-Custom" = "value" }
-env_http_headers = { "X-Dynamic" = "ENV_VAR_NAME" }
-```
+Each tool is defined with:
+- **name**: Unique identifier (e.g., `build_topology`)
+- **description**: Human-readable explanation
+- **inputSchema**: JSON Schema defining input parameters
 
----
+Example:
+```python
+from mcp.server import Server
+from mcp.types import Tool
 
-## Custom Manifest
+server = Server("offline_incident_analysis")
 
-Use a custom manifest file:
-
-```bash
-python -m zero --session-dir /tmp/session \
-  --tools-manifest /path/to/custom/manifest.toml \
-  --tools my_custom_tool
+@server.list_tools()
+async def list_tools():
+    return [
+        Tool(
+            name="build_topology",
+            description="Build operational topology...",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "arch_file": {"type": "string"},
+                    # ... more properties
+                },
+                "required": ["arch_file"]
+            }
+        )
+    ]
 ```
 
 ---
 
 ## Creating New Tools
 
-### Option A: Add to Existing sre_utils (Recommended)
+### Option A: Add to Existing offline_incident_analysis (Recommended)
 
-The easiest way to add a new tool is to extend `sre_tools/cli/sre_utils/tools.py`:
+The easiest way to add a new tool is to extend `sre_tools/cli/offline_incident_analysis/tools.py`:
 
 **Step 1: Add the standalone function**
 
@@ -1091,9 +1076,9 @@ if args.list:
 ```
 
 Now you can use it via:
-- **MCP**: Enabled automatically when `--tools sre_utils` is used
-- **CLI**: `python -m sre_tools.cli.sre_utils.tools my_new_tool --input-file ... --output-file ...`
-- **Python**: `from sre_tools.cli.sre_utils.tools import my_new_tool_standalone`
+- **MCP**: Enabled automatically when `--tools offline_incident_analysis` is used
+- **CLI**: `python -m sre_tools.offline_incident_analysis.tools my_new_tool --input-file ... --output-file ...`
+- **Python**: `from sre_tools.offline_incident_analysis.tools import my_new_tool_standalone`
 
 ---
 
@@ -1101,10 +1086,10 @@ Now you can use it via:
 
 For a completely separate tool category, create a new MCP server:
 
-1. Create a new directory under `sre_tools/cli/`:
+1. Create a new directory under `sre_tools/`:
 
 ```
-sre_tools/cli/my_server/
+sre_tools/my_server/
 ├── __init__.py
 ├── __main__.py
 └── tools.py
@@ -1139,16 +1124,17 @@ if __name__ == "__main__":
     main()
 ```
 
-3. Define tools (`tools.py`) - follow the pattern in `sre_utils/tools.py`
+3. Define tools (`tools.py`) - follow the pattern in `offline_incident_analysis/tools.py`
 
-4. Add to `manifest.toml`:
+4. Add to `zero/zero-config/config.toml`:
 
 ```toml
-[tools.my_server]
-description = "My custom MCP server"
-type = "stdio"
-command = "{python}"
-args = ["-m", "sre_tools.cli.my_server"]
+[mcp_servers.my_server]
+command = "python"
+args = ["-m", "sre_tools.my_server"]
+
+[mcp_servers.my_server.env]
+PYTHONPATH = "."
 ```
 
 ## IMPORTANT NOTE
@@ -1175,13 +1161,9 @@ This applies to all Python-based MCP servers in this project.
 
 ## Troubleshooting
 
-### Tool not found in manifest
+### MCP server not starting
 
-```
-Warning: Tool 'xyz' not found in manifest, skipping
-```
-
-Check that the tool name matches exactly in `manifest.toml`.
+Check that the server is properly configured in `zero/zero-config/config.toml` and that the command/args are correct.
 
 ### kubernetes-mcp-server fails to start
 
@@ -1191,18 +1173,12 @@ Check that the tool name matches exactly in `manifest.toml`.
 
 ### MCP server times out
 
-Increase timeout in manifest:
-
-```toml
-[tools.slow_tool]
-startup_timeout_sec = 30
-tool_timeout_sec = 120
-```
+Check server logs and ensure the server is responding to MCP protocol requests. You can test the server independently using the MCP inspector (see "Method 3: MCP Inspector" above).
 
 
 
 # codex
 
-codex --config 'mcp_servers.sre_utils.command="/usr/bin/<PYTHON>"'\
-      --config 'mcp_servers.sre_utils.args=["-m", "sre_tools.cli.sre_utils"]' \
-      --config 'mcp_servers.sre_utils.env={"PYTHONPATH"="/Users/saurabhjha/projects/open_source/sre_support_agent"}
+codex --config 'mcp_servers.offline_incident_analysis.command="/usr/bin/<PYTHON>"'\
+      --config 'mcp_servers.offline_incident_analysis.args=["-m", "sre_tools.offline_incident_analysis"]' \
+      --config 'mcp_servers.offline_incident_analysis.env={"PYTHONPATH"="/Users/saurabhjha/projects/open_source/sre_support_agent"}

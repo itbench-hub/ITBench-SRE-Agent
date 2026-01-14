@@ -135,14 +135,14 @@ Zero is a thin wrapper around Codex CLI that handles workspace setup, prompt tem
 # Basic run with prompt template
 python -m zero --workspace /tmp/work \
     --read-only-dir ./ITBench-Snapshots/snapshots/sre/v0.1-.../Scenario-3 \
-    --prompt-file ./zero/zero-config/prompts/tap.md \
+    --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=/path/to/Scenario-3" \
     -- exec --full-auto -m "Azure/gpt-5.1-2025-11-13"
 
 # With additional user query
 python -m zero --workspace /tmp/work \
     --read-only-dir ./Scenario-3 \
-    --prompt-file ./zero/zero-config/prompts/tap.md \
+    --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=/path/to/Scenario-3" \
     -- exec --full-auto -m "google/gemini-2.5-pro" \
     "Focus on the payment service alerts"
@@ -220,14 +220,14 @@ base_url = "https://openrouter.ai/api/v1"
 name = "gpt-5.1-azure"
 model = "Azure/gpt-5.1-2025-11-13"
 provider = "ete"
-prompt_file = "./zero/zero-config/prompts/tap.md"
+prompt_file = "./zero/zero-config/prompts/react_shell_investigation.md"
 wire_api = "responses"  # "chat" for non-OpenAI models
 
 [[agents]]
 name = "gemini-2.5-pro"
 model = "google/gemini-2.5-pro"
 provider = "openrouter"
-prompt_file = "./zero/zero-config/prompts/tap.md"
+prompt_file = "./zero/zero-config/prompts/react_shell_investigation.md"
 wire_api = "chat"  # Required for Gemini!
 ```
 
@@ -327,7 +327,7 @@ sre_support_agent/
 │       ├── README.md              # Zero documentation
 │       ├── config.toml            # Codex config template
 │       ├── prompts/               # Prompt templates
-│       │   └── tap.md             # Main SRE prompt
+│       │   └── react_shell_investigation.md  # Main SRE prompt
 │       └── policy/                # Execution policies
 │
 ├── itbench_leaderboard/           # Leaderboard orchestrator
@@ -347,7 +347,7 @@ sre_support_agent/
 │   ├── README.md                  # Full tool documentation
 │   ├── manifest.toml              # Tool registry
 │   ├── utils.py                   # Shared utilities
-│   └── cli/sre_utils/             # Tool implementations
+│   └── offline_incident_analysis/             # Tool implementations
 │       └── tools.py               # All SRE analysis tools
 │
 ├── website/                       # Static leaderboard UI
@@ -377,7 +377,7 @@ uv run isort .
 
 # Run single agent test
 python -m zero --workspace /tmp/test --dry-run \
-    --prompt-file ./zero/zero-config/prompts/tap.md \
+    --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=/path/to/scenario" \
     -- exec -m "openai/gpt-5.1"
 ```

@@ -5,9 +5,9 @@ These tools help with incident investigation by parsing and analyzing
 Kubernetes events, metrics, and alerts, and building operational topologies.
 
 Can be run as:
-- MCP server: python -m sre_tools.cli.sre_utils
-- CLI tool: python -m sre_tools.cli.sre_utils.tools --arch-file ... --k8s-objects-file ... --output-file ...
-- Python API: from sre_tools.cli.sre_utils.tools import build_topology_standalone
+- MCP server: python -m sre_tools.offline_incident_analysis
+- CLI tool: python -m sre_tools.offline_incident_analysis.tools --arch-file ... --k8s-objects-file ... --output-file ...
+- Python API: from sre_tools.offline_incident_analysis.tools import build_topology_standalone
 """
 
 import csv
@@ -6124,7 +6124,7 @@ def build_topology_standalone(arch_file: str, k8s_objects_file: str, output_file
         ValueError: If files are invalid
         
     Example:
-        >>> from sre_tools.cli.sre_utils.tools import build_topology_standalone
+        >>> from sre_tools.offline_incident_analysis.tools import build_topology_standalone
         >>> topology = build_topology_standalone(
         ...     arch_file="app/arch.json",
         ...     k8s_objects_file="k8s_objects_otel-demo_chaos-mesh.tsv",
@@ -6218,19 +6218,19 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(
-        prog="sre_utils",
+        prog="offline_incident_analysis",
         description="SRE utility tools for incident investigation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Build topology from architecture and K8s objects
-  python -m sre_tools.cli.sre_utils.tools build_topology \\
+  python -m sre_tools.offline_incident_analysis.tools build_topology \\
     --arch-file app/arch.json \\
     --k8s-objects-file k8s_objects.tsv \\
     --output-file topology.json
 
   # List available tools
-  python -m sre_tools.cli.sre_utils.tools --list
+  python -m sre_tools.offline_incident_analysis.tools --list
         """
     )
     

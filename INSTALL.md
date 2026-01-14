@@ -123,13 +123,13 @@ itbench-eval --help
 
 ```bash
 # This should print "MCP tools module OK"
-python -c "from sre_tools.cli.sre_utils.tools import register_tools; print('MCP tools module OK')"
+python -c "from sre_tools.offline_incident_analysis.tools import register_tools; print('MCP tools module OK')"
 
 # List available SRE tools
 python -c "
 import re
 from pathlib import Path
-tools = re.findall(r'Tool\(\s*name=\"([^\"]+)\"', Path('sre_tools/cli/sre_utils/tools.py').read_text())
+tools = re.findall(r'Tool\(\s*name=\"([^\"]+)\"', Path('sre_tools/offline_incident_analysis/tools.py').read_text())
 print('Available SRE MCP tools:')
 for t in tools: print(f'  - {t}')
 "
@@ -165,7 +165,7 @@ uv run zero --workspace /tmp/test-interactive \
 ```bash
 # Run agent with prompt template (requires a valid snapshot directory)
 uv run zero --workspace /tmp/test-exec \
-    --prompt-file ./zero/zero-config/prompts/tap.md \
+    --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=/path/to/ITBench-Snapshots/snapshots/sre/v0.1-.../Scenario-1" \
     -- exec --full-auto -m "openai/gpt-4o-mini" \
     "Start the investigation"
@@ -235,13 +235,13 @@ pip install tomli
 2. Sets `CODEX_HOME` to the workspace directory
 3. Codex reads the config from the workspace, not from `~/.codex/`
 
-The bundled config already includes the `sre_utils` MCP server. You do NOT need to modify `~/.codex/config.toml`.
+The bundled config already includes the `offline_incident_analysis` MCP server. You do NOT need to modify `~/.codex/config.toml`.
 
 If MCP tools still don't load, check:
 
 ```bash
 # Ensure the MCP server can start
-python -m sre_tools.cli.sre_utils
+python -m sre_tools.offline_incident_analysis
 
 # Check workspace config was created
 ls -la /tmp/your-workspace/config.toml

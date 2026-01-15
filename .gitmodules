@@ -1,3 +1,4 @@
-[submodule "ITBench-Snapshots"]
-	path = ITBench-Snapshots
-	url = git@github.com:itbench-hub/ITBench-Snapshots.git
+[submodule "ITBench-Lite"]
+	path = ITBench-Lite
+	url = git@github.com:itbench-hub/ITBench-Lite.git
+	branch = main

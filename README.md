@@ -1,6 +1,6 @@
 # ITBench SRE Agent
 
-A modular framework for evaluating LLM agents on Site Reliability Engineering (SRE) incident diagnosis tasks using the [ITBench](https://github.com/itbench-hub/ITBench-Snapshots) benchmark.
+A modular framework for evaluating LLM agents on Site Reliability Engineering (SRE) incident diagnosis tasks using the [ITBench](https://github.com/itbench-hub/ITBench-Lite) benchmark.
 
 ## Architecture Overview
 
@@ -79,9 +79,12 @@ The SRE Tools module provides specialized MCP (Model Context Protocol) tools for
 ### Installation
 
 ```bash
-# Clone with submodules (ITBench-Snapshots is a submodule)
+# Clone with submodules (ITBench-Lite is a submodule)
 git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
 cd ITBench-SRE-Agent
+
+# If you already cloned without --recurse-submodules, initialize the submodule:
+# git submodule update --init --recursive
 
 # Install dependencies
 uv sync
@@ -91,16 +94,15 @@ uv sync
 ### Environment Variables
 
 ```bash
-# Agent model provider keys (used by Zero runs)
-export OR_API_KEY="your-openrouter-key"              # OpenRouter (agents)
-export ETE_API_KEY="your-ete-key"                    # ETE LiteLLM Proxy (agents)
-export AZURE_OPENAI_API_KEY="your-azure-key"         # Azure OpenAI (agents)
+# LiteLLM Proxy - API keys for model providers
+export OPENROUTER_API_KEY="your-openrouter-key"    # For OpenRouter-proxied models
+export OPENAI_API_KEY="your-openai-key"            # For direct OpenAI models
 
-# Judge (itbench_evaluations) uses OpenAI-compatible env vars.
+# Judge (itbench_evaluations) - uses OpenAI-compatible env vars
 # The leaderboard sets these automatically from [judge] config, but set them
 # yourself when running `itbench-eval` directly.
 export JUDGE_BASE_URL="https://openrouter.ai/api/v1"
-export JUDGE_API_KEY="$OR_API_KEY"
+export JUDGE_API_KEY="$OPENROUTER_API_KEY"
 export JUDGE_MODEL="google/gemini-2.5-pro"
 ```
 
@@ -111,11 +113,8 @@ export JUDGE_MODEL="google/gemini-2.5-pro"
 ### 1. Running LiteLLM Proxy (Required)
 
 Before running agents, start the LiteLLM proxy in a separate terminal:
-```bash
-# Required environment variables for LiteLLM
-export OPENROUTER_API_KEY="your-openrouter-key"    # For OpenRouter-proxied models
-export OPENAI_API_KEY="your-openai-key"            # For direct OpenAI models
 
+```bash
 # Start LiteLLM proxy (runs on http://localhost:4000 by default)
 litellm --config litellm_config.yaml
 
@@ -123,7 +122,7 @@ litellm --config litellm_config.yaml
 litellm --config litellm_config.yaml --port 8080
 ```
 
-Keep this terminal running while executing agent runs. The proxy provides a unified OpenAI-compatible endpoint for all configured models.
+Keep this terminal running while executing agent runs. The proxy provides a unified OpenAI-compatible endpoint for all configured models, using the API keys set in the environment variables above.
 
 
 ### 2. Run Agent Independently (Zero)
@@ -133,7 +132,7 @@ Zero is a thin wrapper around Codex CLI that handles workspace setup, prompt tem
 ```bash
 # Basic run with prompt template
 python -m zero --workspace /tmp/work \
-    --read-only-dir ./ITBench-Snapshots/snapshots/sre/v0.1-.../Scenario-3 \
+    --read-only-dir ./ITBench-Lite/snapshots/sre/v0.1-.../Scenario-3 \
     --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=/path/to/Scenario-3" \
     -- exec --full-auto -m "Azure/gpt-5.1-2025-11-13"
@@ -161,13 +160,13 @@ Evaluate agent outputs against ground truth using the `itbench_evaluations` judg
 ```bash
 # Batch evaluate agent output against ground truth
 itbench-eval \
-  --ground-truth ./ITBench-Snapshots \
+  --ground-truth ./ITBench-Lite \
   --outputs ./agent_outputs \
   --result-file ./evaluation_results.json
 ```
 
 Notes:
-- `--ground-truth` can be either a directory like `./ITBench-Snapshots` (each subdir contains its own `ground_truth.yaml`) **or** a single consolidated JSON/YAML file.
+- `--ground-truth` can be either a directory like `./ITBench-Lite` (each subdir contains its own `ground_truth.yaml`) **or** a single consolidated JSON/YAML file.
 - The `--outputs` directory should contain subdirectories for each scenario (e.g., `Scenario-1/1/agent_output.json`)
 - Metrics are produced as floats in [0,1] (precision/recall/F1)
 
@@ -244,7 +243,7 @@ ITBench-SRE-Agent/
 │   └── offline_incident_analysis/ # Tool implementations
 │       └── tools.py               # All SRE analysis tools
 │
-└── ITBench-Snapshots/             # Benchmark data (submodule)
+└── ITBench-Lite/                  # Benchmark data (submodule)
     └── snapshots/sre/...
 ```
 
@@ -292,6 +291,6 @@ The leaderboard only skips scenarios where `agent_output.json` exists. Failed ru
 
 ## References
 
-- [ITBench Benchmark](https://github.com/itbench-hub/ITBench-Snapshots)
+- [ITBench Benchmark](https://github.com/itbench-hub/ITBench-Lite)
 - [Codex CLI](https://github.com/openai/codex)
 - [Codex Configuration](https://github.com/openai/codex/blob/main/docs/config.md)

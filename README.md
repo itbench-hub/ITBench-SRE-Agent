@@ -86,6 +86,12 @@ cd ITBench-SRE-Agent
 # If you already cloned without --recurse-submodules, initialize the submodule:
 # git submodule update --init --recursive
 
+# Extract the benchmark snapshots (they are compressed)
+cd ITBench-Lite/snapshots/sre
+unzip -q 'v0.2-*.zip'
+rm -rf __MACOSX  # Clean up macOS metadata folder if present
+cd ../../..
+
 # Install dependencies
 uv sync
 # or: python -m venv .venv && source .venv/bin/activate && pip install -e .
@@ -116,10 +122,10 @@ Before running agents, start the LiteLLM proxy in a separate terminal:
 
 ```bash
 # Start LiteLLM proxy (runs on http://localhost:4000 by default)
-litellm --config litellm_config.yaml
+uv run litellm --config litellm_config.yaml
 
 # Or with a custom port
-litellm --config litellm_config.yaml --port 8080
+uv run litellm --config litellm_config.yaml --port 8080
 ```
 
 Keep this terminal running while executing agent runs. The proxy provides a unified OpenAI-compatible endpoint for all configured models, using the API keys set in the environment variables above.
@@ -131,24 +137,28 @@ Zero is a thin wrapper around Codex CLI that handles workspace setup, prompt tem
 
 ```bash
 # Basic run with prompt template
-python -m zero --workspace /tmp/work \
-    --read-only-dir ./ITBench-Lite/snapshots/sre/v0.1-.../Scenario-3 \
+# Note: Use absolute paths for --read-only-dir and SNAPSHOT_DIRS should match
+# The prompt is loaded from AGENTS.md (created from the template), so we pass "Begin investigation"
+# Replace v0.2-B96DF826-4BB2-4B62-97AB-6D84254C53D7 with your actual extracted directory name
+# Workspace follows the structure: agent_outputs/<incident_id>/<trial_number>
+uv run python -m zero --workspace ./agent_outputs/2/1 \
+    --read-only-dir $(pwd)/ITBench-Lite/snapshots/sre/v0.2-B96DF826-4BB2-4B62-97AB-6D84254C53D7/Scenario-2 \
     --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
-    --variable "SNAPSHOT_DIRS=/path/to/Scenario-3" \
-    -- exec --full-auto -m "Azure/gpt-5.1-2025-11-13"
+    --variable "SNAPSHOT_DIRS=$(pwd)/ITBench-Lite/snapshots/sre/v0.2-B96DF826-4BB2-4B62-97AB-6D84254C53D7/Scenario-2" \
+    -- exec --full-auto -m "gemini-2.5-pro" "Begin investigation"
 
-# With additional user query
-python -m zero --workspace /tmp/work \
-    --read-only-dir ./Scenario-3 \
+# With additional user query appended to the base prompt (trial 2 of same scenario)
+uv run python -m zero --workspace ./agent_outputs/2/1 \
+    --read-only-dir $(pwd)/ITBench-Lite/snapshots/sre/v0.2-B96DF826-4BB2-4B62-97AB-6D84254C53D7/Scenario-2 \
     --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
-    --variable "SNAPSHOT_DIRS=/path/to/Scenario-3" \
-    -- exec --full-auto -m "google/gemini-2.5-pro" \
+    --variable "SNAPSHOT_DIRS=$(pwd)/ITBench-Lite/snapshots/sre/v0.2-B96DF826-4BB2-4B62-97AB-6D84254C53D7/Scenario-2" \
+    -- exec --full-auto -m "claude-4-5-opus-latest" \
     "Focus on the payment service alerts"
 
-# Interactive mode (TUI)
-python -m zero --workspace /tmp/work \
-    --read-only-dir ./Scenario-3 \
-    -- -m "openai/gpt-5.1"
+# Interactive mode (TUI) - for quick testing, you can use /tmp
+uv run python -m zero --workspace ./agent_outputs/2/1 \
+    --read-only-dir $(pwd)/ITBench-Lite/snapshots/sre/v0.2-B96DF826-4BB2-4B62-97AB-6D84254C53D7/Scenario-2 \
+    -- -m "gemini-2.5-pro"
 ```
 
 📖 **Full documentation**: [zero/zero-config/README.md](./zero/zero-config/README.md)
@@ -159,14 +169,20 @@ Evaluate agent outputs against ground truth using the `itbench_evaluations` judg
 
 ```bash
 # Batch evaluate agent output against ground truth
-itbench-eval \
-  --ground-truth ./ITBench-Lite \
+# Point to the extracted scenario directory (replace with your actual directory name)
+# Make sure judge environment variables are set (see Environment Variables section)
+JUDGE_BASE_URL="https://openrouter.ai/api/v1" \
+JUDGE_API_KEY="$OPENROUTER_API_KEY" \
+JUDGE_MODEL="google/gemini-2.5-pro" \
+uv run itbench-eval \
+  --ground-truth ./ITBench-Lite/snapshots/sre/v0.2-B96DF826-4BB2-4B62-97AB-6D84254C53D7 \
   --outputs ./agent_outputs \
   --result-file ./evaluation_results.json
 ```
 
 Notes:
-- `--ground-truth` can be either a directory like `./ITBench-Lite` (each subdir contains its own `ground_truth.yaml`) **or** a single consolidated JSON/YAML file.
+- `--ground-truth` should point to the directory containing scenario subdirectories (e.g., `Scenario-1`, `Scenario-2`, etc.), each with a `ground_truth.yaml` file
+- Alternatively, `--ground-truth` can be a single consolidated JSON/YAML file
 - The `--outputs` directory should contain subdirectories for each scenario (e.g., `Scenario-1/1/agent_output.json`)
 - Metrics are produced as floats in [0,1] (precision/recall/F1)
 
@@ -260,10 +276,10 @@ uv run black .
 uv run isort .
 
 # Run single agent test
-python -m zero --workspace /tmp/test --dry-run \
+uv run python -m zero --workspace /tmp/test --dry-run \
     --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=/path/to/scenario" \
-    -- exec -m "openai/gpt-5.1"
+    -- exec -m "gpt-5.2"
 ```
 
 ---

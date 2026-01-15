@@ -953,7 +953,6 @@ name = "itbench-sre-agent"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
-    { name = "aiohttp" },
     { name = "asteval" },
     { name = "drain3" },
     { name = "litellm", extra = ["proxy"] },
@@ -963,7 +962,6 @@ dependencies = [
     { name = "opentelemetry-proto" },
     { name = "pandas" },
     { name = "pyyaml" },
-    { name = "requests" },
     { name = "scipy" },
     { name = "tomli-w" },
 ]
@@ -977,7 +975,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "asteval", specifier = ">=1.0.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=24.0.0" },
     { name = "drain3", specifier = ">=0.9.11" },
@@ -990,7 +987,6 @@ requires-dist = [
     { name = "opentelemetry-proto", specifier = ">=1.24.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "pyyaml", specifier = ">=6.0.0" },
-    { name = "requests", specifier = ">=2.28.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "scipy", specifier = ">=1.10.0" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.0" },

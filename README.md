@@ -9,21 +9,22 @@ A modular framework for evaluating LLM agents on Site Reliability Engineering (S
 │                           ITBench SRE Framework                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌──────────────┐    ┌──────────────────┐    ┌──────────────────────────┐  │
-│  │    Zero      │───▶│  ITBench         │───▶│   ITBench Evaluations    │  │
-│  │ Agent Runner │    │  Leaderboard     │    │   (LLM-as-a-Judge)       │  │
-│  └──────────────┘    └──────────────────┘    └──────────────────────────┘  │
-│        │                     │                          │                   │
-│        ▼                     ▼                          ▼                   │
-│  ┌──────────────┐    ┌──────────────────┐    ┌──────────────────────────┐  │
-│  │   Codex CLI  │    │ model_leaderboard│    │   agent_output.json      │  │
-│  │  (OpenAI)    │    │     .toml        │    │   judge_output.json      │  │
-│  └──────────────┘    └──────────────────┘    └──────────────────────────┘  │
-│                                                                             │
-│                              ┌─────────────────┐                            │
-│                              │    Website      │                            │
-│                              │  (Leaderboard)  │                            │
-│                              └─────────────────┘                            │
+│  ┌──────────────┐                          ┌──────────────────────────┐    │
+│  │    Zero      │─────────────────────────▶│   ITBench Evaluations    │    │
+│  │ Agent Runner │                          │   (LLM-as-a-Judge)       │    │
+│  └──────────────┘                          └──────────────────────────┘    │
+│        │                                              │                     │
+│        ▼                                              ▼                     │
+│  ┌──────────────┐                          ┌──────────────────────────┐    │
+│  │   Codex CLI  │                          │   agent_output.json      │    │
+│  │  (OpenAI)    │                          │   evaluation_results.json│    │
+│  └──────────────┘                          └──────────────────────────┘    │
+│        │                                                                    │
+│        ▼                                                                    │
+│  ┌──────────────┐                                                          │
+│  │  SRE Tools   │                                                          │
+│  │ (MCP Server) │                                                          │
+│  └──────────────┘                                                          │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -33,9 +34,7 @@ A modular framework for evaluating LLM agents on Site Reliability Engineering (S
 | Module | Description | Documentation |
 |--------|-------------|---------------|
 | **[Zero](./zero/)** | Thin wrapper around [Codex CLI](https://github.com/openai/codex) for running SRE agents | [zero/zero-config/README.md](./zero/zero-config/README.md) |
-| **[ITBench Leaderboard](./itbench_leaderboard/)** | Orchestrates agent runs across scenarios, collects results | [itbench_leaderboard/README.md](./itbench_leaderboard/README.md) |
-| **[ITBench Evaluations](./itbench_evaluations/)** | LLM-as-a-Judge evaluator for agent outputs (direct OpenAI/OpenAI-compatible SDK) | `itbench_evaluations/` |
-| **[Website](./website/)** | Static leaderboard visualization | [website/README.md](./website/README.md) |
+| **[ITBench Evaluations](./itbench_evaluations/)** | LLM-as-a-Judge evaluator for agent outputs | `itbench_evaluations/` |
 | **[SRE Tools](./sre_tools/)** | MCP server with SRE diagnostic tools | [sre_tools/README.md](./sre_tools/README.md) |
 
 ### SRE Tools Overview
@@ -81,8 +80,8 @@ The SRE Tools module provides specialized MCP (Model Context Protocol) tools for
 
 ```bash
 # Clone with submodules (ITBench-Snapshots is a submodule)
-git clone --recurse-submodules <repository-url>
-cd sre_support_agent
+git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
+cd ITBench-SRE-Agent
 
 # Install dependencies
 uv sync
@@ -155,141 +154,44 @@ python -m zero --workspace /tmp/work \
 
 📖 **Full documentation**: [zero/zero-config/README.md](./zero/zero-config/README.md)
 
-### 3. Run Judge Independently
+### 3. Evaluate Agent Output
 
-Evaluate agent outputs against ground truth using the `itbench_evaluations` judge (recommended via the `itbench-eval` CLI).
+Evaluate agent outputs against ground truth using the `itbench_evaluations` judge (LLM-as-a-Judge).
 
 ```bash
-# Batch evaluate all trials under an outputs directory (leaderboard_results layout)
+# Batch evaluate agent output against ground truth
 itbench-eval \
   --ground-truth ./ITBench-Snapshots \
-  --outputs ./leaderboard_results/react\ with\ code_google_gemini-2.5-pro_d4cd266 \
+  --outputs ./agent_outputs \
   --result-file ./evaluation_results.json
 ```
 
 Notes:
 - `--ground-truth` can be either a directory like `./ITBench-Snapshots` (each subdir contains its own `ground_truth.yaml`) **or** a single consolidated JSON/YAML file.
-- Metrics are produced as floats in \([0,1]\) (precision/recall/F1); the leaderboard prints them as percentages.
-
-### 4. Run Leaderboard (Full Benchmark)
-
-The leaderboard orchestrates running multiple agents across all scenarios with multiple runs for statistical significance.
-
-```bash
-# Configure agents in model_leaderboard.toml, then:
-python -m itbench_leaderboard --config model_leaderboard.toml
-
-# With options
-python -m itbench_leaderboard --config model_leaderboard.toml \
-    --runs 3 \                    # 3 runs per scenario
-    --agents gpt-5.1-azure \      # Only run specific agent
-    --scenarios Scenario-3 \      # Only run specific scenario
-    --verbose
-
-# Re-judge existing outputs (without re-running agents)
-python -m itbench_leaderboard --config model_leaderboard.toml --rejudge
-
-# Smoke test: 2 incidents, 1 run
-python -m itbench_leaderboard --config model_leaderboard.toml --scenarios 1 2 --runs 1
-```
-
-📖 **Full documentation**: [itbench_leaderboard/README.md](./itbench_leaderboard/README.md)
-
----
-
-## Configuration
-
-### model_leaderboard.toml
-
-```toml
-# Scenarios and output
-scenarios_dir = "./ITBench-Snapshots/snapshots/sre/v0.1-..."
-leaderboard_dir = "./leaderboard_results"
-runs_per_scenario = 3
-concurrent = true
-max_workers = 3
-
-# Judge configuration
-[judge]
-model = "google/gemini-2.5-pro"
-provider = "openrouter"
-base_url = "https://openrouter.ai/api/v1"
-
-# Agent configurations
-[[agents]]
-name = "gpt-5.1-azure"
-model = "Azure/gpt-5.1-2025-11-13"
-provider = "ete"
-prompt_file = "./zero/zero-config/prompts/react_shell_investigation.md"
-wire_api = "responses"  # "chat" for non-OpenAI models
-
-[[agents]]
-name = "gemini-2.5-pro"
-model = "google/gemini-2.5-pro"
-provider = "openrouter"
-prompt_file = "./zero/zero-config/prompts/react_shell_investigation.md"
-wire_api = "chat"  # Required for Gemini!
-```
-
-### wire_api Setting (Critical!)
-
-| Model Provider | wire_api |
-|----------------|----------|
-| OpenAI (gpt-*, o*-mini) | `responses` |
-| Azure OpenAI | `responses` |
-| Anthropic (claude-*) | `chat` ⚠️ |
-| Google (gemini-*) | `chat` ⚠️ |
-| Other models | `chat` ⚠️ |
-
-**Using `wire_api = "responses"` with non-OpenAI models will cause function calls to fail!**
+- The `--outputs` directory should contain subdirectories for each scenario (e.g., `Scenario-1/1/agent_output.json`)
+- Metrics are produced as floats in [0,1] (precision/recall/F1)
 
 ---
 
 ## Output Structure
 
+Zero creates structured output directories for each agent run:
+
 ```
-leaderboard_results/
-├── gpt-5.1-azure/
-│   ├── Scenario-1/
-│   │   ├── 1/                          # Run 1
-│   │   │   ├── agent_output.json       # Agent diagnosis
-│   │   │   ├── judge_output.json       # Judge evaluation
-│   │   │   ├── AGENTS.md               # Prompt given to agent
-│   │   │   ├── config.toml             # Codex config
-│   │   │   └── traces/
-│   │   │       └── traces.jsonl        # OTEL traces
-│   │   ├── 2/                          # Run 2
-│   │   └── 3/                          # Run 3
-│   └── Scenario-3/
-│       └── ...
-├── gemini-2.5-pro/
-│   └── ...
-└── results/
-    ├── gpt-5.1-azure.json              # Per-agent results
-    ├── gemini-2.5-pro.json
-    └── leaderboard.json                # Combined leaderboard
+workspace/
+├── agent_output.json           # Agent's incident diagnosis
+├── config.toml                 # Codex configuration
+├── AGENTS.md                   # System prompt
+├── agent_generated_code/       # Python scripts generated by agent
+└── traces/
+    ├── traces.jsonl            # OTEL traces
+    └── stdout.log              # Console output
 ```
 
----
+Evaluation results:
 
-## Viewing Results
-
-### Leaderboard Website
-
-```bash
-cd website
-python -m http.server 8000
-# Open http://localhost:8000
 ```
-
-### JSON Results
-
-```bash
-# View leaderboard rankings
-cat leaderboard_results/results/leaderboard.json | jq '.rankings'
-
-# View per-scenario breakdown
-cat leaderboard_results/results/gpt-5.1-azure.json | jq '.scenarios'
+evaluation_results.json         # Judge scores and statistics
 ```
 
 ---
@@ -313,11 +215,11 @@ The judge evaluates agent outputs on these metrics:
 ## Project Structure
 
 ```
-sre_support_agent/
+ITBench-SRE-Agent/
 ├── README.md                      # This file
-├── model_leaderboard.toml         # Leaderboard configuration
+├── model_leaderboard.toml         # Example configuration
+├── litellm_config.yaml            # LiteLLM proxy config
 ├── pyproject.toml                 # Python project config
-├── requirements.txt
 │
 ├── zero/                          # Agent runner (Codex wrapper)
 │   ├── cli.py                     # CLI entry point
@@ -326,41 +228,24 @@ sre_support_agent/
 │   └── zero-config/               # Bundled config
 │       ├── README.md              # Zero documentation
 │       ├── config.toml            # Codex config template
-│       ├── prompts/               # Prompt templates
-│       │   └── react_shell_investigation.md  # Main SRE prompt
-│       └── policy/                # Execution policies
+│       └── prompts/               # Prompt templates
+│           └── react_shell_investigation.md  # Main SRE prompt
 │
-├── itbench_leaderboard/           # Leaderboard orchestrator
-│   ├── README.md
-│   ├── cli.py                     # CLI entry point
-│   ├── config.py                  # TOML config loader
-│   ├── runner.py                  # Agent subprocess runner
-│   └── results.py                 # Results aggregation
-│
-├── itbench_evaluations/           # LLM-as-a-Judge (direct OpenAI SDK)
+├── itbench_evaluations/           # LLM-as-a-Judge
 │   ├── __main__.py                # `itbench-eval` CLI entrypoint
-│   ├── agent.py                   # LAAJ evaluator
+│   ├── agent.py                   # Evaluator
 │   ├── loader.py                  # GT/output loaders
+│   ├── aggregator.py              # Statistics
 │   └── prompts/                   # Judge prompts
 │
 ├── sre_tools/                     # MCP tools for SRE
 │   ├── README.md                  # Full tool documentation
-│   ├── manifest.toml              # Tool registry
 │   ├── utils.py                   # Shared utilities
-│   └── offline_incident_analysis/             # Tool implementations
+│   └── offline_incident_analysis/ # Tool implementations
 │       └── tools.py               # All SRE analysis tools
 │
-├── website/                       # Static leaderboard UI
-│   ├── README.md
-│   ├── index.html
-│   └── results/                   # Generated JSON results
-│
-├── ITBench-Snapshots/             # Benchmark data (submodule)
-│   └── snapshots/sre/...
-│
-└── workspace/                     # Shared data
-    └── shared/
-        └── application_architecture.json
+└── ITBench-Snapshots/             # Benchmark data (submodule)
+    └── snapshots/sre/...
 ```
 
 ---

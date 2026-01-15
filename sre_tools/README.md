@@ -1192,7 +1192,7 @@ codex --config 'mcp_servers.offline_incident_analysis.command="python3"' \
 # Or with explicit path (update to your installation)
 codex --config 'mcp_servers.offline_incident_analysis.command="/usr/bin/python3"' \
       --config 'mcp_servers.offline_incident_analysis.args=["-m", "sre_tools.offline_incident_analysis"]' \
-      --config 'mcp_servers.offline_incident_analysis.env={"PYTHONPATH":"/path/to/sre_support_agent"}'
+      --config 'mcp_servers.offline_incident_analysis.env={"PYTHONPATH":"/path/to/ITBench-SRE-Agent"}'
 ```
 
 ---

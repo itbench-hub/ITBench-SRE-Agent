@@ -15,8 +15,8 @@
 
 ```bash
 # Clone the repository with submodules
-git clone --recurse-submodules https://github.com/YOUR_ORG/sre_support_agent.git
-cd sre_support_agent
+git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
+cd ITBench-SRE-Agent
 
 # If you already cloned without --recurse-submodules:
 git submodule update --init --recursive
@@ -26,7 +26,6 @@ uv sync
 
 # Verify installation
 uv run zero --help
-uv run itbench-leaderboard --help
 uv run itbench-eval --help
 ```
 
@@ -34,8 +33,8 @@ uv run itbench-eval --help
 
 ```bash
 # Clone the repository with submodules
-git clone --recurse-submodules https://github.com/YOUR_ORG/sre_support_agent.git
-cd sre_support_agent
+git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
+cd ITBench-SRE-Agent
 
 # If you already cloned without --recurse-submodules:
 git submodule update --init --recursive
@@ -52,7 +51,6 @@ pip install -e .
 
 # Verify installation
 zero --help
-itbench-leaderboard --help
 itbench-eval --help
 ```
 
@@ -114,10 +112,10 @@ itbench-eval --help
 
 ### Common gotchas
 
-- **`ModuleNotFoundError: No module named 'numpy'`**: you’re running outside the managed environment.
-  - If you installed with **uv**, run via uv: `uv run itbench-leaderboard --help` (or `uv run python -m itbench_leaderboard --help`).
+- **`ModuleNotFoundError: No module named 'numpy'`**: you're running outside the managed environment.
+  - If you installed with **uv**, run via uv: `uv run itbench-eval --help` (or `uv run python -m itbench_evaluations --help`).
   - If you installed with **pip**, make sure your venv is activated: `source .venv/bin/activate`.
-- **Command name uses dashes**: the CLI is `itbench-leaderboard` (not `itbench_leaderboard`).
+- **Command name uses dashes**: the CLI is `itbench-eval` (not `itbench_evaluations`).
 
 ### 2. Check MCP tools module loads
 
@@ -188,8 +186,7 @@ After installation, you'll have these CLI commands:
 | Command | Description |
 |---------|-------------|
 | `zero` | Agent runner (wraps Codex CLI) |
-| `itbench-leaderboard` | Run benchmarks and evaluate agents |
-| `itbench-eval` | Run judge directly on saved outputs |
+| `itbench-eval` | LLM-as-a-Judge evaluation on saved outputs |
 
 And these Python packages:
 
@@ -197,8 +194,7 @@ And these Python packages:
 |---------|-------------|
 | `zero` | Agent runner module |
 | `sre_tools` | MCP tools for SRE analysis |
-| `itbench_evaluations` | LLM-as-a-Judge evaluation (direct OpenAI SDK) |
-| `itbench_leaderboard` | Benchmark orchestration |
+| `itbench_evaluations` | LLM-as-a-Judge evaluation |
 
 ---
 
@@ -275,5 +271,4 @@ If `agent_output.json` is not created:
 
 - See [README.md](README.md) for usage examples
 - See [zero/zero-config/README.md](zero/zero-config/README.md) for agent configuration
-- See [itbench_leaderboard/README.md](itbench_leaderboard/README.md) for running benchmarks
 - See [sre_tools/README.md](sre_tools/README.md) for MCP tool documentation

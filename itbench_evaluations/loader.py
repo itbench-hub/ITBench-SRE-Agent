@@ -15,37 +15,37 @@ logger = logging.getLogger("itbench_evaluations.loader")
 
 def canonicalize_scenario_id(name: str) -> str:
     """Extract canonical scenario ID from directory/scenario name.
-    
+
     Handles various naming conventions:
     - "1", "2", "102" -> "1", "2", "102" (numeric, unchanged)
-    - "Scenario-1", "scenario-1" -> "1" 
+    - "Scenario-1", "scenario-1" -> "1"
     - "Scenario_1", "scenario_1" -> "1"
     - "incident-1", "Incident-1" -> "1"
     - "scenario1" -> "1"
-    
+
     Args:
         name: Directory or scenario name
-        
+
     Returns:
         Canonical ID (usually just the numeric part)
     """
     # If it's already just a number, return as-is
     if name.isdigit():
         return name
-    
+
     # Try to extract number from common patterns
     patterns = [
-        r'^[Ss]cenario[-_]?(\d+)$',  # Scenario-1, scenario_1, scenario1
-        r'^[Ii]ncident[-_]?(\d+)$',   # Incident-1, incident_1
-        r'^(\d+)$',                    # Just a number
-        r'[-_](\d+)$',                 # anything-1, anything_1
+        r"^[Ss]cenario[-_]?(\d+)$",  # Scenario-1, scenario_1, scenario1
+        r"^[Ii]ncident[-_]?(\d+)$",  # Incident-1, incident_1
+        r"^(\d+)$",  # Just a number
+        r"[-_](\d+)$",  # anything-1, anything_1
     ]
-    
+
     for pattern in patterns:
         match = re.match(pattern, name)
         if match:
             return match.group(1)
-    
+
     # If no pattern matches, return original name
     logger.debug(f"Could not canonicalize scenario name: {name}, using as-is")
     return name
@@ -53,29 +53,29 @@ def canonicalize_scenario_id(name: str) -> str:
 
 def load_ground_truth(path: str) -> Dict[str, Dict[str, Any]]:
     """Load ground truth from JSON or YAML.
-    
+
     Supports multiple formats:
     - JSON array: [{"id": "1", "groups": [...], ...}, ...]
     - Single JSON file: {"id": "1", "groups": [...], ...}
     - Single YAML file: {groups: [...], propagations: [...], ...}
     - Directory of YAML files: path/<incident_id>/ground_truth.yaml
-    
+
     Args:
         path: Path to ground truth file or directory
-    
+
     Returns:
         Dict mapping incident_id -> ground truth dict
-    
+
     Raises:
         ValueError: If the path is invalid or cannot be parsed
     """
     path = Path(path)
-    
+
     if path.is_file():
         if path.suffix == ".json":
             with open(path) as f:
                 data = json.load(f)
-            
+
             # Handle array format
             if isinstance(data, list):
                 return {str(item["id"]): item for item in data}
@@ -88,27 +88,27 @@ def load_ground_truth(path: str) -> Dict[str, Dict[str, Any]]:
                     incident_id = path.stem
                     data["id"] = incident_id
                     return {incident_id: data}
-        
+
         elif path.suffix in (".yaml", ".yml"):
             with open(path) as f:
                 data = yaml.safe_load(f)
-            
+
             # Handle array format in YAML
             if isinstance(data, list):
                 return {str(item["id"]): item for item in data}
-            
+
             # Single file - use filename as id if not present
             if "id" not in data:
                 incident_id = path.stem
                 data["id"] = incident_id
             else:
                 incident_id = str(data["id"])
-            
+
             return {incident_id: data}
-    
+
     elif path.is_dir():
         result = {}
-        
+
         # Check for ground_truths.json in the directory (consolidated format)
         gt_json = path / "ground_truths.json"
         if gt_json.exists():
@@ -118,7 +118,7 @@ def load_ground_truth(path: str) -> Dict[str, Dict[str, Any]]:
             if isinstance(data, list):
                 return {str(item["id"]): item for item in data}
             return {str(data["id"]): data}
-        
+
         # Scan for scenario subdirectories (ITBench-Snapshots structure)
         # Expected: path/<scenario_id>/ground_truth.yaml
         logger.info(f"Scanning directory for scenario ground truths: {path}")
@@ -132,7 +132,7 @@ def load_ground_truth(path: str) -> Dict[str, Dict[str, Any]]:
                     scenario_dir / "gt.yaml",
                     scenario_dir / "gt.json",
                 ]
-                
+
                 for gt_file in gt_candidates:
                     if gt_file.exists():
                         if gt_file.suffix == ".json":
@@ -141,26 +141,26 @@ def load_ground_truth(path: str) -> Dict[str, Dict[str, Any]]:
                         else:
                             with open(gt_file) as f:
                                 data = yaml.safe_load(f)
-                        
+
                         # Canonicalize the ID
                         canonical_id = canonicalize_scenario_id(scenario_dir.name)
-                        
+
                         if "id" not in data:
                             data["id"] = canonical_id
-                        
+
                         # Store with canonical ID as key
                         result[canonical_id] = data
                         # Also store original dir name for path lookups
                         data["_dir_name"] = scenario_dir.name
                         logger.debug(f"Loaded ground truth for scenario: {scenario_dir.name} -> {canonical_id}")
                         break
-        
+
         if result:
             logger.info(f"Loaded {len(result)} ground truths from directory")
             return result
-        
+
         raise ValueError(f"No ground truth files found in directory: {path}")
-    
+
     raise ValueError(f"Invalid ground truth path: {path}")
 
 
@@ -169,16 +169,16 @@ async def load_agent_outputs(
     incident_id: str,
 ) -> Tuple[List[Dict[str, Any]], int]:
     """Load agent outputs for an incident.
-    
+
     Searches for agent output files in trial subdirectories:
     - output_dir/<incident_id>/<trial>/outputs/agent_output.json
     - output_dir/<incident_id>/<trial>/outputs/agent_response.json
     - output_dir/<incident_id>/<trial>/agent_output.json
-    
+
     Args:
         output_dir: Base directory containing agent outputs
         incident_id: Incident identifier to load outputs for
-    
+
     Returns:
         Tuple of (list of trial outputs, count of bad/unreadable runs)
         Each trial output contains:
@@ -188,21 +188,20 @@ async def load_agent_outputs(
     outputs = []
     bad_runs = 0
     incident_dir = Path(output_dir) / incident_id
-    
+
     logger.debug(f"Looking for agent outputs in: {incident_dir}")
-    
+
     if not incident_dir.exists():
         logger.warning(f"No directory found for incident {incident_id} at {incident_dir}")
         return outputs, bad_runs
-    
+
     # Find all trial directories (directories with numeric names)
     trial_dirs = sorted(
-        [d for d in incident_dir.iterdir() if d.is_dir() and d.name.isdigit()],
-        key=lambda d: int(d.name)
+        [d for d in incident_dir.iterdir() if d.is_dir() and d.name.isdigit()], key=lambda d: int(d.name)
     )
-    
+
     logger.debug(f"Found {len(trial_dirs)} trial directories for incident {incident_id}")
-    
+
     for trial_dir in trial_dirs:
         # Try multiple possible file locations
         candidates = [
@@ -211,22 +210,22 @@ async def load_agent_outputs(
             trial_dir / "agent_output.json",
             trial_dir / "agent_response.json",
         ]
-        
+
         output_file = None
         for candidate in candidates:
             if candidate.exists():
                 output_file = candidate
                 break
-        
+
         if output_file:
             try:
                 with open(output_file) as f:
                     file_content = f.read()
-                
+
                 # Try to parse as regular JSON
                 try:
                     output_data = json.loads(file_content)
-                    
+
                     # Handle case where JSON contains a markdown-wrapped string
                     if isinstance(output_data, str):
                         logger.debug("Output data is a string, attempting to extract JSON")
@@ -238,40 +237,41 @@ async def load_agent_outputs(
                                 output_data = json.loads(json_str)
                         else:
                             output_data = json.loads(output_data)
-                    
-                    outputs.append({
-                        "trial": int(trial_dir.name),
-                        "output": output_data,
-                    })
+
+                    outputs.append(
+                        {
+                            "trial": int(trial_dir.name),
+                            "output": output_data,
+                        }
+                    )
                     logger.debug(f"Successfully loaded trial {trial_dir.name}")
-                    
+
                 except json.JSONDecodeError as e:
                     logger.warning(f"JSON parsing failed for {output_file}: {e}")
-                    
+
                     # Try simple JSON repair
                     fixed_data = simple_json_repair(file_content)
-                    
+
                     if fixed_data is not None:
-                        outputs.append({
-                            "trial": int(trial_dir.name),
-                            "output": fixed_data,
-                        })
+                        outputs.append(
+                            {
+                                "trial": int(trial_dir.name),
+                                "output": fixed_data,
+                            }
+                        )
                         logger.info(f"Fixed and loaded trial {trial_dir.name}")
                     else:
                         logger.error(f"JSON repair failed for {output_file}")
                         bad_runs += 1
-                        
+
             except Exception as e:
                 logger.error(f"Error reading {output_file}: {e}")
                 bad_runs += 1
         else:
             logger.warning(f"No agent output found in {trial_dir}")
             bad_runs += 1
-    
-    logger.info(
-        f"Loaded {len(outputs)} valid trial outputs for incident {incident_id}, "
-        f"found {bad_runs} bad runs"
-    )
+
+    logger.info(f"Loaded {len(outputs)} valid trial outputs for incident {incident_id}, " f"found {bad_runs} bad runs")
     return outputs, bad_runs
 
 
@@ -280,15 +280,14 @@ def load_agent_outputs_sync(
     incident_id: str,
 ) -> Tuple[List[Dict[str, Any]], int]:
     """Synchronous version of load_agent_outputs.
-    
+
     Args:
         output_dir: Base directory containing agent outputs
         incident_id: Incident identifier to load outputs for
-    
+
     Returns:
         Tuple of (list of trial outputs, count of bad/unreadable runs)
     """
     import asyncio
+
     return asyncio.run(load_agent_outputs(output_dir, incident_id))
-
-

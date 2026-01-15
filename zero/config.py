@@ -12,7 +12,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-
 # Path to the bundled config directory (zero-config/)
 BUNDLED_CONFIG_DIR = Path(__file__).parent / "zero-config"
 
@@ -25,12 +24,12 @@ class ZeroWorkspacePaths:
     """Paths within the Zero workspace."""
 
     workspace_dir: Path
-    config_toml: Path       # workspace/config.toml
-    prompts_dir: Path       # workspace/prompts/
-    policy_dir: Path        # workspace/policy/
-    traces_dir: Path        # workspace/traces/
-    traces_jsonl: Path      # workspace/traces/traces.jsonl
-    stdout_log: Path        # workspace/traces/stdout.log
+    config_toml: Path  # workspace/config.toml
+    prompts_dir: Path  # workspace/prompts/
+    policy_dir: Path  # workspace/policy/
+    traces_dir: Path  # workspace/traces/
+    traces_jsonl: Path  # workspace/traces/traces.jsonl
+    stdout_log: Path  # workspace/traces/stdout.log
 
 
 def setup_workspace(
@@ -50,7 +49,7 @@ def setup_workspace(
     3. Copies config.toml with modifications
     4. Copies prompts/ and policy/ directories
     5. Updates config with read-only dirs, OTEL settings, etc.
-    
+
     Args:
         workspace_dir: Path to the workspace directory
         read_only_dirs: List of read-only data directories
@@ -58,7 +57,7 @@ def setup_workspace(
         collect_traces: Whether to enable OTEL trace collection
         otel_port: Port for OTEL collector
         verbose: Enable verbose output
-        
+
     Returns:
         ZeroWorkspacePaths with all relevant paths
     """
@@ -164,7 +163,7 @@ def _generate_config(
     - Update sandbox writable_roots to workspace
     - Configure OTEL if trace collection enabled
     - Add trust entry for workspace
-    
+
     Note: experimental_instructions_file is NOT used because it's unreliable.
     Instead, prompts are passed directly to codex exec via runner.py.
     """
@@ -204,21 +203,21 @@ def _update_writable_roots(content: str, workspace_path: str) -> str:
     import re
 
     # Match the writable_roots array and replace it
-    pattern = r'(writable_roots\s*=\s*\[)[^\]]*(\])'
+    pattern = r"(writable_roots\s*=\s*\[)[^\]]*(\])"
     replacement = rf'\g<1>\n    "{workspace_path}",\n\g<2>'
-    
+
     new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
     return new_content
 
 
 def _add_otel_config(content: str, otel_port: int) -> str:
     """Add OTEL configuration section for trace collection."""
-    otel_section = f'''
+    otel_section = f"""
 # Zero: OTEL tracing configuration (auto-generated for --collect-traces)
 [otel]
 log_user_prompt = true
 exporter = {{ otlp-http = {{ endpoint = "http://localhost:{otel_port}/v1/logs", protocol = "binary" }} }}
-'''
+"""
     # Add at the end of the file (before trust entry if present)
     return content.rstrip() + "\n" + otel_section
 
@@ -230,13 +229,11 @@ def _add_trust_entry(content: str, workspace_path: str) -> str:
         [projects."<workspace_path>"]
         trust_level = "trusted"
     """
-    trust_section = f'''
+    trust_section = f"""
 # Zero: Mark workspace as trusted (auto-generated)
 [projects."{workspace_path}"]
 trust_level = "trusted"
-'''
-    
+"""
+
     # Add at the end of the file
     return content.rstrip() + "\n" + trust_section
-
-

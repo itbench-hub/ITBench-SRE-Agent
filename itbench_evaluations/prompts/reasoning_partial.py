@@ -43,5 +43,3 @@ ROOT_CAUSE_REASONING_PARTIAL_OUTPUT_FORMAT = """"root_cause_reasoning_partial": 
     ]
   },
   """
-
-

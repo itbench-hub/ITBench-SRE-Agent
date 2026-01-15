@@ -7,9 +7,9 @@ import logging
 import sys
 from pathlib import Path
 
-from .agent import evaluate_batch, EvaluationConfig, EVAL_CRITERIA
+from .agent import EVAL_CRITERIA, EvaluationConfig, evaluate_batch
 from .aggregator import calculate_statistics
-from .loader import load_ground_truth, load_agent_outputs
+from .loader import load_agent_outputs, load_ground_truth
 
 
 def setup_logging(verbose: bool = False):
@@ -23,10 +23,8 @@ def setup_logging(verbose: bool = False):
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="ITBench Evaluations - LLM-as-a-Judge for RCA evaluation"
-    )
-    
+    parser = argparse.ArgumentParser(description="ITBench Evaluations - LLM-as-a-Judge for RCA evaluation")
+
     parser.add_argument(
         "--ground-truth",
         "-g",
@@ -38,7 +36,7 @@ def parse_args():
             "(2) Single JSON/YAML file with all ground truths"
         ),
     )
-    
+
     parser.add_argument(
         "--outputs",
         "-o",
@@ -46,7 +44,7 @@ def parse_args():
         required=True,
         help="Path to agent outputs directory",
     )
-    
+
     parser.add_argument(
         "--result-file",
         "-r",
@@ -54,7 +52,7 @@ def parse_args():
         default="evaluation_results.json",
         help="Output file for results (default: evaluation_results.json)",
     )
-    
+
     parser.add_argument(
         "--eval-criteria",
         "-e",
@@ -63,72 +61,72 @@ def parse_args():
         choices=EVAL_CRITERIA,
         help="Evaluation criteria to use (default: all)",
     )
-    
+
     parser.add_argument(
         "--k",
         type=int,
         default=3,
         help="Value of k for ROOT_CAUSE_ENTITY_K metric (default: 3)",
     )
-    
+
     parser.add_argument(
         "--max-concurrent",
         type=int,
         default=5,
         help="Maximum concurrent evaluations (default: 5)",
     )
-    
+
     parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
         help="Enable verbose logging",
     )
-    
+
     return parser.parse_args()
 
 
 async def main_async(args):
     """Main async entry point."""
     logger = logging.getLogger("itbench_evaluations")
-    
+
     # Load ground truths
     logger.info(f"Loading ground truths from: {args.ground_truth}")
     ground_truths = load_ground_truth(args.ground_truth)
     logger.info(f"Loaded {len(ground_truths)} ground truth scenarios")
-    
+
     # Load agent outputs for each scenario
     logger.info(f"Loading agent outputs from: {args.outputs}")
     all_agent_outputs = {}
     total_trials = 0
     total_bad_runs = 0
-    
+
     for incident_id in ground_truths.keys():
         outputs, bad_runs = await load_agent_outputs(args.outputs, incident_id)
         if outputs:
             all_agent_outputs[incident_id] = outputs
             total_trials += len(outputs)
         total_bad_runs += bad_runs
-    
+
     logger.info(f"Loaded {total_trials} trials across {len(all_agent_outputs)} incidents")
     if total_bad_runs > 0:
         logger.warning(f"Found {total_bad_runs} bad/unreadable runs")
-    
+
     # Create evaluation config
     config = EvaluationConfig(
         eval_criteria=args.eval_criteria,
         k=args.k,
         max_concurrent=args.max_concurrent,
     )
-    
+
     # Run batch evaluation
     logger.info("Starting batch evaluation...")
     results = await evaluate_batch(ground_truths, all_agent_outputs, config)
-    
+
     # Structure results for aggregator
     structured_results = []
     incident_results = {}
-    
+
     for result in results:
         incident_id = result.get("incident_id")
         if incident_id not in incident_results:
@@ -137,18 +135,20 @@ async def main_async(args):
                 "evaluations": [],
                 "total_bad_runs": 0,
             }
-        
-        incident_results[incident_id]["evaluations"].append({
-            "trial_id": result.get("trial_id"),
-            "scores": result.get("scores", {}),
-        })
-    
+
+        incident_results[incident_id]["evaluations"].append(
+            {
+                "trial_id": result.get("trial_id"),
+                "scores": result.get("scores", {}),
+            }
+        )
+
     structured_results = list(incident_results.values())
-    
+
     # Calculate statistics
     logger.info("Calculating statistics...")
     stats = calculate_statistics(structured_results)
-    
+
     # Prepare output
     output = {
         "raw_results": results,
@@ -160,14 +160,14 @@ async def main_async(args):
             "k": args.k,
         },
     }
-    
+
     # Write results
     result_path = Path(args.result_file)
     with open(result_path, "w") as f:
         json.dump(output, f, indent=2)
-    
+
     logger.info(f"Results written to: {result_path}")
-    
+
     # Print summary
     print("\n" + "=" * 60)
     print("EVALUATION SUMMARY")
@@ -190,7 +190,7 @@ def main():
     """Main entry point."""
     args = parse_args()
     setup_logging(args.verbose)
-    
+
     try:
         asyncio.run(main_async(args))
     except KeyboardInterrupt:
@@ -203,5 +203,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

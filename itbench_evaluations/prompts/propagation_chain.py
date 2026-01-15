@@ -31,5 +31,3 @@ PROPAGATION_CHAIN_OUTPUT_FORMAT = """"propagation_chain": {
           "calculation": "calculator_tool(expression='2 * (1.0 * 0.66) / (1.0 + 0.66)')"
       },
       """
-
-

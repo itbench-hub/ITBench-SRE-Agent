@@ -9,19 +9,20 @@ logger = logging.getLogger("itbench_evaluations.json_fixer")
 
 def remove_trailing_commas(json_str: str) -> str:
     """Remove trailing commas from JSON-like string.
-    
+
     Handles trailing commas before ] and } which are common LLM mistakes.
     """
     import re
+
     # Remove trailing commas before closing brackets/braces
     # Match comma followed by optional whitespace and closing bracket/brace
-    json_str = re.sub(r',(\s*[\]\}])', r'\1', json_str)
+    json_str = re.sub(r",(\s*[\]\}])", r"\1", json_str)
     return json_str
 
 
 def add_missing_commas(json_str: str) -> str:
     """Add missing commas between JSON elements.
-    
+
     Handles missing commas which are common LLM mistakes, like:
     - "value1" "key2" -> "value1", "key2" (with or without newline)
     - } { -> }, {
@@ -30,62 +31,62 @@ def add_missing_commas(json_str: str) -> str:
     - } " -> }, "
     """
     import re
-    
+
     # Add comma after string value followed by whitespace and string key
     # "value"    "key" -> "value",    "key" (preserves original whitespace)
-    json_str = re.sub(r'(")(\s+)(")', r'\1,\2\3', json_str)
-    
+    json_str = re.sub(r'(")(\s+)(")', r"\1,\2\3", json_str)
+
     # Add comma after } followed by whitespace and {
-    json_str = re.sub(r'(\})(\s+)(\{)', r'\1,\2\3', json_str)
-    
+    json_str = re.sub(r"(\})(\s+)(\{)", r"\1,\2\3", json_str)
+
     # Add comma after ] followed by whitespace and [
-    json_str = re.sub(r'(\])(\s+)(\[)', r'\1,\2\3', json_str)
-    
+    json_str = re.sub(r"(\])(\s+)(\[)", r"\1,\2\3", json_str)
+
     # Add comma after } followed by whitespace and "
-    json_str = re.sub(r'(\})(\s+)(")', r'\1,\2\3', json_str)
-    
+    json_str = re.sub(r'(\})(\s+)(")', r"\1,\2\3", json_str)
+
     # Add comma after ] followed by whitespace and "
-    json_str = re.sub(r'(\])(\s+)(")', r'\1,\2\3', json_str)
-    
+    json_str = re.sub(r'(\])(\s+)(")', r"\1,\2\3", json_str)
+
     # Add comma after number followed by whitespace and " (for number values)
-    json_str = re.sub(r'(\d)(\s+)(")', r'\1,\2\3', json_str)
-    
+    json_str = re.sub(r'(\d)(\s+)(")', r"\1,\2\3", json_str)
+
     # Add comma after true/false/null followed by whitespace and "
-    json_str = re.sub(r'(true|false|null)(\s+)(")', r'\1,\2\3', json_str)
-    
+    json_str = re.sub(r'(true|false|null)(\s+)(")', r"\1,\2\3", json_str)
+
     # Add comma after number followed by whitespace and { or [
-    json_str = re.sub(r'(\d)(\s+)([\{\[])', r'\1,\2\3', json_str)
-    
+    json_str = re.sub(r"(\d)(\s+)([\{\[])", r"\1,\2\3", json_str)
+
     # Add comma after true/false/null followed by whitespace and { or [
-    json_str = re.sub(r'(true|false|null)(\s+)([\{\[])', r'\1,\2\3', json_str)
-    
+    json_str = re.sub(r"(true|false|null)(\s+)([\{\[])", r"\1,\2\3", json_str)
+
     return json_str
 
 
 def fix_unbalanced_braces(json_str: str) -> str:
     """Fix unbalanced braces/brackets at the end of JSON.
-    
+
     LLMs sometimes add extra closing braces/brackets.
     This function removes trailing unmatched closers.
     """
     # Count braces and brackets
-    open_braces = json_str.count('{')
-    close_braces = json_str.count('}')
-    open_brackets = json_str.count('[')
-    close_brackets = json_str.count(']')
-    
+    open_braces = json_str.count("{")
+    close_braces = json_str.count("}")
+    open_brackets = json_str.count("[")
+    close_brackets = json_str.count("]")
+
     # Remove excess closing braces from the end
-    while close_braces > open_braces and json_str.rstrip().endswith('}'):
+    while close_braces > open_braces and json_str.rstrip().endswith("}"):
         json_str = json_str.rstrip()
         json_str = json_str[:-1]
         close_braces -= 1
-    
+
     # Remove excess closing brackets from the end
-    while close_brackets > open_brackets and json_str.rstrip().endswith(']'):
+    while close_brackets > open_brackets and json_str.rstrip().endswith("]"):
         json_str = json_str.rstrip()
         json_str = json_str[:-1]
         close_brackets -= 1
-    
+
     return json_str
 
 
@@ -127,14 +128,14 @@ def fix_misordered_array_closure(json_str: str) -> str:
         return json_str
 
     # And the very end looks like: ] <ws> }
-    tail = s[last_bracket:last_brace + 1]
+    tail = s[last_bracket : last_brace + 1]
     if not (tail.startswith("]") and tail.endswith("}")):
         return json_str
 
     # Replace the tail "] <ws> }" with "} ]" (preserve the whitespace that was between ] and })
     # Example:
     #   ... ]\n}  ->  ... }\n]
-    between = s[last_bracket + 1:last_brace]
+    between = s[last_bracket + 1 : last_brace]
     s2 = s[:last_bracket] + "}" + between + "]"
     return s2
 
@@ -150,16 +151,16 @@ def fix_json_string(json_str: str) -> str:
 
 def simple_json_repair(content: str) -> Optional[Dict[str, Any]]:
     """Simple JSON repair function that handles common formatting issues.
-    
+
     This function attempts to fix malformed JSON by:
     - Removing markdown code blocks
     - Removing trailing commas (common LLM mistake)
     - Unescaping common escape sequences
     - Removing surrounding quotes
-    
+
     Args:
         content: Potentially malformed JSON string
-    
+
     Returns:
         Parsed JSON object if successful, None if failed
     """
@@ -171,23 +172,23 @@ def simple_json_repair(content: str) -> Optional[Dict[str, Any]]:
             parts = content.split("```")
             if len(parts) >= 2:
                 content = parts[1].strip()
-        
+
         # Remove surrounding quotes if present
         content = content.strip()
         if content.startswith('"') and content.endswith('"'):
             content = content[1:-1]
-        
+
         # Try to unescape common escape sequences
-        content = content.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
-        
+        content = content.replace('\\"', '"').replace("\\n", "\n").replace("\\t", "\t")
+
         # Remove trailing commas (very common LLM mistake)
         content = remove_trailing_commas(content)
-        
+
         # Try to parse
         result = json.loads(content)
         logger.debug("Simple JSON repair successful")
         return result
-        
+
     except json.JSONDecodeError as e:
         logger.debug(f"Simple JSON repair failed: {e}")
         return None
@@ -198,12 +199,12 @@ def simple_json_repair(content: str) -> Optional[Dict[str, Any]]:
 
 def extract_json_from_text(content: str) -> Optional[Dict[str, Any]]:
     """Extract and parse JSON from text that may contain non-JSON content.
-    
+
     Tries to find JSON object or array boundaries in the text.
-    
+
     Args:
         content: Text that may contain JSON
-    
+
     Returns:
         Parsed JSON object if found, None otherwise
     """
@@ -212,19 +213,19 @@ def extract_json_from_text(content: str) -> Optional[Dict[str, Any]]:
         return json.loads(content)
     except json.JSONDecodeError:
         pass
-    
+
     # Try to find JSON boundaries
     json_start = -1
     json_end = -1
-    
+
     # Look for object
-    obj_start = content.find('{')
-    obj_end = content.rfind('}')
-    
+    obj_start = content.find("{")
+    obj_end = content.rfind("}")
+
     # Look for array
-    arr_start = content.find('[')
-    arr_end = content.rfind(']')
-    
+    arr_start = content.find("[")
+    arr_end = content.rfind("]")
+
     # Use whichever starts first
     if obj_start >= 0 and (arr_start < 0 or obj_start < arr_start):
         json_start = obj_start
@@ -232,14 +233,14 @@ def extract_json_from_text(content: str) -> Optional[Dict[str, Any]]:
     elif arr_start >= 0:
         json_start = arr_start
         json_end = arr_end + 1
-    
+
     if json_start >= 0 and json_end > json_start:
         try:
             json_str = content[json_start:json_end]
             return json.loads(json_str)
         except json.JSONDecodeError:
             pass
-    
+
     return None
 
 
@@ -268,5 +269,3 @@ Common fixes to apply:
 - Remove any non-JSON text before or after the JSON content
 
 Now fix this JSON content:"""
-
-

@@ -56,5 +56,3 @@ ROOT_CAUSE_ENTITY_OUTPUT_FORMAT = """"root_cause_entity": {
         "justification": "..."
       },
       """
-
-

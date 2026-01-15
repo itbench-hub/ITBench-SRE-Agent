@@ -17,7 +17,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-
 # Embedded Python collector script - receives OTLP HTTP logs
 COLLECTOR_SCRIPT = '''
 import http.server
@@ -265,7 +264,7 @@ class OtelTraceCollector:
         """Check if a port is already in use."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
-                s.bind(('0.0.0.0', port))
+                s.bind(("0.0.0.0", port))
                 return False
             except OSError:
                 return True
@@ -274,13 +273,9 @@ class OtelTraceCollector:
         """Try to kill any process using the specified port."""
         try:
             # Use lsof to find the process
-            result = subprocess.run(
-                ['lsof', '-ti', f':{port}'],
-                capture_output=True,
-                text=True
-            )
+            result = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True)
             if result.stdout.strip():
-                pids = result.stdout.strip().split('\n')
+                pids = result.stdout.strip().split("\n")
                 for pid in pids:
                     try:
                         os.kill(int(pid), signal.SIGKILL)
@@ -320,7 +315,7 @@ class OtelTraceCollector:
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Write collector script to temp file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(COLLECTOR_SCRIPT)
             self._script_file = f.name
 
@@ -333,8 +328,10 @@ class OtelTraceCollector:
             cmd = [
                 sys.executable,
                 self._script_file,
-                "--port", str(self.port),
-                "--output", str(self.output_file),
+                "--port",
+                str(self.port),
+                "--output",
+                str(self.output_file),
             ]
             if self.verbose:
                 cmd.append("--verbose")
@@ -353,9 +350,7 @@ class OtelTraceCollector:
 
             # Check if it started successfully
             if self._process.poll() is not None:
-                raise RuntimeError(
-                    f"OTEL collector failed to start (exit code {self._process.returncode})"
-                )
+                raise RuntimeError(f"OTEL collector failed to start (exit code {self._process.returncode})")
 
             self._started = True
 

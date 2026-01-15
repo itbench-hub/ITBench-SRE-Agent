@@ -200,8 +200,6 @@ def _process_prompt_to_agents_md(
     return codex_args
 
 
-
-
 def _run_with_retry(
     *,
     codex_args: list[str],

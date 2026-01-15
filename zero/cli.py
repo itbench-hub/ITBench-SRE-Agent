@@ -37,11 +37,10 @@ from pathlib import Path
 
 from .config import (
     BUNDLED_CONFIG_DIR,
-    setup_workspace,
     ZeroWorkspacePaths,
+    setup_workspace,
 )
 from .runner import run_codex
-
 
 # Codex flags that Zero reserves control over
 FORBIDDEN_CODEX_FLAGS = {
@@ -56,15 +55,11 @@ def _validate_codex_args(codex_args: list[str]) -> None:
     for i, arg in enumerate(codex_args):
         # Check exact matches
         if arg in FORBIDDEN_CODEX_FLAGS:
-            raise ValueError(
-                f"Cannot pass '{arg}' to Codex: {FORBIDDEN_CODEX_FLAGS[arg]}"
-            )
+            raise ValueError(f"Cannot pass '{arg}' to Codex: {FORBIDDEN_CODEX_FLAGS[arg]}")
         # Check --flag=value form
         for flag in FORBIDDEN_CODEX_FLAGS:
             if arg.startswith(f"{flag}="):
-                raise ValueError(
-                    f"Cannot pass '{flag}' to Codex: {FORBIDDEN_CODEX_FLAGS[flag]}"
-                )
+                raise ValueError(f"Cannot pass '{flag}' to Codex: {FORBIDDEN_CODEX_FLAGS[flag]}")
 
 
 def _split_args(argv: list[str]) -> tuple[list[str], list[str]]:
@@ -277,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error running Codex: {e}", file=sys.stderr)
         if args.verbose:
             import traceback
+
             traceback.print_exc()
         return 1
 

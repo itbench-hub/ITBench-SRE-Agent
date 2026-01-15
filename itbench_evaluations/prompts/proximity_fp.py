@@ -25,8 +25,6 @@ ROOT_CAUSE_PROXIMITY_FP_PROMPT = """**{id}. Root Cause Proximity (With FP)**
   """
 
 
-
-
 ROOT_CAUSE_PROXIMITY_FP_OUTPUT_FORMAT = """"root_cause_proximity_with_fp": {
     "gt_path_length": 5,
     "calculation_precision": "calculator_tool(expression='(s_1 + … + s_M) / M')",
@@ -55,5 +53,3 @@ ROOT_CAUSE_PROXIMITY_FP_OUTPUT_FORMAT = """"root_cause_proximity_with_fp": {
     ]
   }
   """
-
-

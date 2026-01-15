@@ -104,6 +104,11 @@ uv sync
 export OPENROUTER_API_KEY="your-openrouter-key"    # For OpenRouter-proxied models
 export OPENAI_API_KEY="your-openai-key"            # For direct OpenAI models
 
+# WatsonX (optional - only if using WatsonX models)
+export IBMCLOUD_WATSONX_API_KEY="your-watsonx-api-key"
+export IBMCLOUD_WATSONX_PROJECT_ID="your-project-id"
+export IBMCLOUD_WATSONX_BASE_URL="https://us-south.ml.cloud.ibm.com"  # Or your region
+
 # Judge (itbench_evaluations) - uses OpenAI-compatible env vars
 # The leaderboard sets these automatically from [judge] config, but set them
 # yourself when running `itbench-eval` directly.
@@ -111,6 +116,8 @@ export JUDGE_BASE_URL="https://openrouter.ai/api/v1"
 export JUDGE_API_KEY="$OPENROUTER_API_KEY"
 export JUDGE_MODEL="google/gemini-2.5-pro"
 ```
+
+**Tip**: Add these to your `~/.zshrc` or `~/.bashrc` to persist them across terminal sessions.
 
 ---
 

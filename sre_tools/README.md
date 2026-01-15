@@ -1179,6 +1179,35 @@ Check server logs and ensure the server is responding to MCP protocol requests. 
 
 # codex
 
-codex --config 'mcp_servers.offline_incident_analysis.command="/usr/bin/<PYTHON>"'\
+```bash
+# Using $PWD (run from project root)
+codex --config 'mcp_servers.offline_incident_analysis.command="python3"' \
       --config 'mcp_servers.offline_incident_analysis.args=["-m", "sre_tools.offline_incident_analysis"]' \
-      --config 'mcp_servers.offline_incident_analysis.env={"PYTHONPATH"="/Users/saurabhjha/projects/open_source/sre_support_agent"}
+      --config "mcp_servers.offline_incident_analysis.env={\"PYTHONPATH\":\"$PWD\"}"
+
+# Or let Python find it (if package is installed)
+codex --config 'mcp_servers.offline_incident_analysis.command="python3"' \
+      --config 'mcp_servers.offline_incident_analysis.args=["-m", "sre_tools.offline_incident_analysis"]'
+
+# Or with explicit path (update to your installation)
+codex --config 'mcp_servers.offline_incident_analysis.command="/usr/bin/python3"' \
+      --config 'mcp_servers.offline_incident_analysis.args=["-m", "sre_tools.offline_incident_analysis"]' \
+      --config 'mcp_servers.offline_incident_analysis.env={"PYTHONPATH":"/path/to/sre_support_agent"}'
+```
+
+---
+
+## Code Structure
+
+The `offline_incident_analysis` module is organized into domain-specific packages:
+
+- `shared/` - Common utilities (parsers, filters, formatters, K8s utils, time utils)
+- `topology/` - Topology building and analysis
+- `metrics/` - Metric analysis and anomaly detection
+- `events/` - K8s event analysis
+- `logs/` - Log analysis with Drain3
+- `traces/` - Distributed trace analysis
+- `alerts/` - Alert analysis and summarization
+- `k8s_specs/` - K8s spec change tracking and retrieval
+- `context/` - Context aggregation across data sources
+

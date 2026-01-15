@@ -12,9 +12,3 @@ Tools are declared in code and automatically registered when the MCP server star
 __version__ = "0.1.0"
 
 __all__ = ["__version__"]
-
-
-
-
-
-

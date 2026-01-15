@@ -5,6 +5,7 @@ Run with: python -m sre_tools.offline_incident_analysis
 """
 
 import asyncio
+
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
@@ -29,6 +30,7 @@ def main():
         pass
     except Exception as e:
         import sys
+
         print(f"Error starting MCP server: {e}", file=sys.stderr)
         sys.exit(1)
 

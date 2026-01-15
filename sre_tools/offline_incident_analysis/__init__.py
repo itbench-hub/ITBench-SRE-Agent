@@ -6,5 +6,3 @@ Provides utility tools for SRE incident investigation:
 
 Can be run as MCP server (via Zero) or standalone Python command for testing.
 """
-
- 

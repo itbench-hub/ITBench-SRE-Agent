@@ -1,4 +1,4 @@
 [submodule "ITBench-Lite"]
 	path = ITBench-Lite
-	url = git@github.com:itbench-hub/ITBench-Lite.git
+	url = https://github.com/itbench-hub/ITBench-Lite.git
 	branch = main

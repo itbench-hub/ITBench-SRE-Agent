@@ -957,6 +957,7 @@ dependencies = [
     { name = "drain3" },
     { name = "litellm", extra = ["proxy"] },
     { name = "mcp" },
+    { name = "mcp-kubernetes-server" },
     { name = "numpy" },
     { name = "openai" },
     { name = "opentelemetry-proto" },
@@ -982,6 +983,7 @@ requires-dist = [
     { name = "litellm", specifier = ">=1.80.11" },
     { name = "litellm", extras = ["proxy"], specifier = ">=1.80.11" },
     { name = "mcp", specifier = ">=1.0.0" },
+    { name = "mcp-kubernetes-server", specifier = ">=0.0.1" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "openai", specifier = ">=1.0.0" },
     { name = "opentelemetry-proto", specifier = ">=1.24.0" },
@@ -1288,6 +1290,24 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/12/42/10c0c09ca27aceacd8c428956cfabdd67e3d328fe55c4abc16589285d294/mcp-1.23.1.tar.gz", hash = "sha256:7403e053e8e2283b1e6ae631423cb54736933fea70b32422152e6064556cd298", size = 596519, upload-time = "2025-12-02T18:41:12.807Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9f/9e/26e1d2d2c6afe15dfba5ca6799eeeea7656dce625c22766e4c57305e9cc2/mcp-1.23.1-py3-none-any.whl", hash = "sha256:3ce897fcc20a41bd50b4c58d3aa88085f11f505dcc0eaed48930012d34c731d8", size = 231433, upload-time = "2025-12-02T18:41:11.195Z" },
+]
+
+[package.optional-dependencies]
+cli = [
+    { name = "python-dotenv" },
+    { name = "typer" },
+]
+
+[[package]]
+name = "mcp-kubernetes-server"
+version = "0.1.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mcp", extra = ["cli"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8a/46/6958c59fd348173f65c1dcac80e519c140dcf8f657f3d7b52aa1ffbdfbfd/mcp_kubernetes_server-0.1.6.tar.gz", hash = "sha256:b856fc24005d6dd7c94ab199ad42ab6690b3e2772c296d6629cbc07e05c10f70", size = 7249, upload-time = "2025-04-15T08:15:29.997Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/32/9f/af11add1f2a78a2940a9ab099f3af032938b51f7689772787b1063238e3a/mcp_kubernetes_server-0.1.6-py3-none-any.whl", hash = "sha256:9241e46fdaad0b67a755627c3d278c9e051de07e1a6350b48bdebc3527077b02", size = 8080, upload-time = "2025-04-15T08:15:28.47Z" },
 ]
 
 [[package]]
@@ -2555,6 +2575,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a8/4b/29b4ef32e036bb34e4ab51796dd745cdba7ed47ad142a9f4a1eb8e0c744d/tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2", size = 169737, upload-time = "2024-11-24T20:12:22.481Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/30/dc54f88dd4a2b5dc8a0279bdd7270e735851848b762aeb1c1184ed1f6b14/tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2", size = 78540, upload-time = "2024-11-24T20:12:19.698Z" },
+]
+
+[[package]]
+name = "typer"
+version = "0.21.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "rich" },
+    { name = "shellingham" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/36/bf/8825b5929afd84d0dabd606c67cd57b8388cb3ec385f7ef19c5cc2202069/typer-0.21.1.tar.gz", hash = "sha256:ea835607cd752343b6b2b7ce676893e5a0324082268b48f27aa058bdb7d2145d", size = 110371, upload-time = "2026-01-06T11:21:10.989Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/1d/d9257dd49ff2ca23ea5f132edf1281a0c4f9de8a762b9ae399b670a59235/typer-0.21.1-py3-none-any.whl", hash = "sha256:7985e89081c636b88d172c2ee0cfe33c253160994d47bdfdc302defd7d1f1d01", size = 47381, upload-time = "2026-01-06T11:21:09.824Z" },
 ]
 
 [[package]]

@@ -24,6 +24,54 @@ args = ["-m", "sre_tools.offline_incident_analysis"]
 [mcp_servers.offline_incident_analysis.env]
 PYTHONPATH = "python"
 
+<<<<<<< Updated upstream
+# ClickHouse MCP Server
+[mcp_servers.clickhouse]
+command = "python"
+args = ["-m", "sre_tools.clickhouse_mcp"]
+
+# Note: ClickHouse MCP inherits environment variables from your shell
+# Set these in your .env file (see .env.tmpl):
+#   CLICKHOUSE_HOST, CLICKHOUSE_PORT, CLICKHOUSE_USER,
+#   CLICKHOUSE_PASSWORD, CLICKHOUSE_DATABASE
+
+# Kubernetes MCP Server
+[mcp_servers.kubernetes]
+command = "python"
+args = ["-m", "sre_tools.kubernetes_mcp"]
+
+# Note: Kubernetes MCP inherits environment variables from your shell
+# Set KUBECONFIG in your .env file (see .env.tmpl) or it will use ~/.kube/config
+=======
+# ClickHouse MCP Server (Altinity - Go-based via Docker)
+# Using Altinity MCP instead of mcp-clickhouse to avoid dependency conflicts
+# with litellm[proxy] (which requires uvicorn<0.32.0 and rich==13.7.1)
+[mcp_servers.clickhouse]
+command = "docker"
+args = [
+    "run", "--rm", "-i", "--network=host",
+    "ghcr.io/altinity/altinity-mcp:latest",
+    "--clickhouse-host", "CLICKHOUSE_HOST_PLACEHOLDER",
+    "--clickhouse-port", "CLICKHOUSE_PORT_PLACEHOLDER",
+    "--clickhouse-database", "CLICKHOUSE_DATABASE_PLACEHOLDER",
+    "--clickhouse-username", "CLICKHOUSE_USER_PLACEHOLDER",
+    "--clickhouse-password", "CLICKHOUSE_PASSWORD_PLACEHOLDER"
+]
+
+# Note: ClickHouse credentials are substituted from environment variables
+# Set these in your .env file (see .env):
+#   CLICKHOUSE_HOST, CLICKHOUSE_PORT, CLICKHOUSE_USER,
+#   CLICKHOUSE_PASSWORD, CLICKHOUSE_DATABASE
+
+# Kubernetes MCP Server (Python-based from containers/kubernetes-mcp-server)
+[mcp_servers.kubernetes]
+command = "uvx"
+args = ["mcp-kubernetes-server"]
+
+# Note: Kubernetes MCP inherits KUBECONFIG from environment
+# Set KUBECONFIG in your .env file or it defaults to ~/.kube/config
+>>>>>>> Stashed changes
+
 # ============================================================================
 # Model Provider - Local LiteLLM Proxy
 # ============================================================================

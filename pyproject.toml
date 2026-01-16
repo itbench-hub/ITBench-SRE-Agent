@@ -20,13 +20,20 @@ dependencies = [
     "tomli_w>=1.0.0", # TOML writing
     "litellm>=1.80.11",
     "litellm[proxy]>=1.80.11",
+    # Kubernetes MCP Server (Python-based, no container needed)
+    "mcp-kubernetes-server>=0.0.1",
 ]
 description = "ITBench SRE Agent - AI-powered incident investigation for SRE benchmarks"
 name = "itbench-sre-agent"
-optional-dependencies = { dev = ["black>=24.0.0", "isort>=5.13.0", "ruff>=0.1.0"] }
-requires-python = ">=3.12"
-scripts = { itbench-eval = "itbench_evaluations.__main__:main", zero = "zero.cli:main" }
+requires-python = ">=3.12,<3.14"
 version = "0.2.0"
+
+[project.optional-dependencies]
+dev = ["black>=24.0.0", "isort>=5.13.0", "ruff>=0.1.0"]
+
+[project.scripts]
+itbench-eval = "itbench_evaluations.__main__:main"
+zero = "zero.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["zero", "sre_tools", "itbench_evaluations"]
@@ -36,7 +43,7 @@ allow-direct-references = true
 
 [tool.black]
 line-length = 120
-target-version = ["py312"]
+target-version = ["py313"]
 
 [tool.isort]
 line_length = 120

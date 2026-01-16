@@ -19,6 +19,18 @@ model_list:
     litellm_params:
       model: openrouter/google/gemini-2.5-pro
       api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: gemini-3-flash-preview
+    litellm_params:
+      model: openrouter/google/gemini-3-flash-preview
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: openrouter/openai/gpt-oss-120b
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: kimi-k2-thinking
+    litellm_params:
+      model: openrouter/moonshotai/kimi-k2-thinking
+      api_key: os.environ/OPENROUTER_API_KEY
 
 litellm_settings:
   drop_params: true

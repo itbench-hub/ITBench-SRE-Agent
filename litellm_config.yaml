@@ -31,6 +31,12 @@ model_list:
     litellm_params:
       model: openrouter/moonshotai/kimi-k2-thinking
       api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: gpt-oss-120b-on-watsonx
+    litellm_params:
+      base_url: os.environ/IBMCLOUD_WATSONX_BASE_URL
+      model: watsonx/openai/gpt-oss-120b
+      api_key: os.environ/IBMCLOUD_WATSONX_API_KEY
+      project_id: os.environ/IBMCLOUD_WATSONX_PROJECT_ID
 
 litellm_settings:
   drop_params: true

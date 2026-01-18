@@ -6,13 +6,15 @@ Handles workspace setup, config file copying, and prompt rendering.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
 import sys
-import yaml
 from dataclasses import dataclass
 from pathlib import Path
+
+import yaml
 
 # Path to the bundled config directory (zero-config/)
 BUNDLED_CONFIG_DIR = Path(__file__).parent / "zero-config"
@@ -163,7 +165,7 @@ def _parse_yaml_frontmatter(prompt_content: str) -> dict | None:
     ---
     """
     # Match YAML frontmatter: starts with ---, ends with ---
-    pattern = r'^---\s*\n(.*?)\n---\s*\n'
+    pattern = r"^---\s*\n(.*?)\n---\s*\n"
     match = re.match(pattern, prompt_content, re.DOTALL)
 
     if not match:
@@ -174,8 +176,8 @@ def _parse_yaml_frontmatter(prompt_content: str) -> dict | None:
     try:
         data = yaml.safe_load(yaml_content)
         # Return only if mcp_servers key exists and has values
-        if data and 'mcp_servers' in data and data['mcp_servers']:
-            return {'mcp_servers': data['mcp_servers']}
+        if data and "mcp_servers" in data and data["mcp_servers"]:
+            return {"mcp_servers": data["mcp_servers"]}
     except yaml.YAMLError:
         # If YAML parsing fails, return None (backward compatibility)
         pass
@@ -194,14 +196,14 @@ def _filter_mcp_servers(content: str, required_servers: list[str]) -> str:
 
     # Use set for O(1) lookup
     required_set = set(required_servers)
-    lines = content.split('\n')
+    lines = content.split("\n")
     filtered_lines = []
     in_mcp_section = False
     current_server = None
 
     for line in lines:
         # Check if we're starting an MCP server section (main header only, not subsections)
-        mcp_match = re.match(r'^\[mcp_servers\.([^\.\]]+)\]', line)
+        mcp_match = re.match(r"^\[mcp_servers\.([^\.\]]+)\]", line)
 
         if mcp_match:
             # Extract server name from section header
@@ -213,25 +215,23 @@ def _filter_mcp_servers(content: str, required_servers: list[str]) -> str:
                 filtered_lines.append(line)
             else:
                 # Comment out disabled server
-                filtered_lines.append(
-                    f"# [mcp_servers.{current_server}] - disabled (not required by prompt template)"
-                )
+                filtered_lines.append(f"# [mcp_servers.{current_server}] - disabled (not required by prompt template)")
             continue
 
         # Check if we're exiting MCP server sections
-        if line.startswith('[') and not line.startswith('[mcp_servers.'):
+        if line.startswith("[") and not line.startswith("[mcp_servers."):
             in_mcp_section = False
             current_server = None
 
         # Handle line based on whether we're in a filtered section
         if in_mcp_section and current_server not in required_set:
             # Comment out lines in disabled sections
-            filtered_lines.append(f"# {line}" if line.strip() and not line.strip().startswith('#') else line)
+            filtered_lines.append(f"# {line}" if line.strip() and not line.strip().startswith("#") else line)
         else:
             # Keep lines in enabled sections or outside MCP sections
             filtered_lines.append(line)
 
-    return '\n'.join(filtered_lines)
+    return "\n".join(filtered_lines)
 
 
 def _generate_config(
@@ -270,8 +270,8 @@ def _generate_config(
         # Parse frontmatter to get required MCP servers
         prompt_content = prompt_path.read_text()
         frontmatter = _parse_yaml_frontmatter(prompt_content)
-        if frontmatter and 'mcp_servers' in frontmatter:
-            required_mcp_servers = frontmatter['mcp_servers']
+        if frontmatter and "mcp_servers" in frontmatter:
+            required_mcp_servers = frontmatter["mcp_servers"]
             if verbose:
                 print(f"Prompt requires MCP servers: {', '.join(required_mcp_servers)}")
 
@@ -328,32 +328,23 @@ exporter = {{ otlp-http = {{ endpoint = "http://localhost:{otel_port}/v1/logs", 
 def _substitute_env_vars(content: str) -> str:
     """Substitute environment variable placeholders in MCP server configs.
 
-    Replaces placeholders like CLICKHOUSE_HOST_PLACEHOLDER with actual env var values.
-    Also substitutes ${VAR_NAME} style references with environment variable values.
+    Replaces ${VAR_NAME} style references with actual environment variable values.
+    Provides sensible defaults for common variables.
     """
-    import os
-    from pathlib import Path
+    # Default values for common environment variables
+    defaults = {
+        "CLICKHOUSE_HOST": "localhost",
+        "CLICKHOUSE_PORT": "8123",
+        "CLICKHOUSE_USER": "default",
+        "CLICKHOUSE_PASSWORD": "",
+        "KUBECONFIG": "",  # Empty means MCP will use default ~/.kube/config
+    }
 
-    # ClickHouse configuration
-    ch_host = os.environ.get("CLICKHOUSE_HOST", "localhost")
-    ch_port = os.environ.get("CLICKHOUSE_PORT", "8123")
-    ch_user = os.environ.get("CLICKHOUSE_USER", "default")
-    ch_password = os.environ.get("CLICKHOUSE_PASSWORD", "")
-
-    content = content.replace("CLICKHOUSE_HOST_PLACEHOLDER", ch_host)
-    content = content.replace("CLICKHOUSE_PORT_PLACEHOLDER", ch_port)
-    content = content.replace("CLICKHOUSE_USER_PLACEHOLDER", ch_user)
-    content = content.replace("CLICKHOUSE_PASSWORD_PLACEHOLDER", ch_password)
-
-    # Substitute ${VAR_NAME} style environment variables
-    # This is used for KUBECONFIG and other dynamic env vars
     def replace_env_var(match):
         var_name = match.group(1)
-        # Get value from environment, or use empty string if not set
-        # (MCP servers will fall back to defaults like ~/.kube/config)
-        return os.environ.get(var_name, "")
+        return os.environ.get(var_name, defaults.get(var_name, ""))
 
-    content = re.sub(r'\$\{([A-Z_]+)\}', replace_env_var, content)
+    content = re.sub(r"\$\{([A-Z_]+)\}", replace_env_var, content)
 
     return content
 

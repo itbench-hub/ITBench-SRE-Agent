@@ -2,9 +2,10 @@
 
 ## Prerequisites
 
-- **Python 3.12+** (required)
+- **Python 3.12 or 3.13** (required - avoid 3.14 due to compatibility issues)
 - **uv** (recommended) or pip
 - **Codex CLI** (for running agents)
+- **[Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/)** (required for ClickHouse MCP server)
 - **API Keys** for LLM providers
 
 ---
@@ -70,28 +71,55 @@ Or follow the official instructions: https://github.com/openai/codex
 
 ---
 
-## Environment Variables
+## Install Podman or Docker
 
-Create a `.env` file or export these environment variables:
+Container runtime is required for ClickHouse MCP server:
 
 ```bash
-# Required: at least one agent provider API key
-export OPENAI_API_KEY="sk-..."                 # For OpenAI models (agents)
-export OR_API_KEY="sk-or-..."                  # For OpenRouter models (agents)
-export AZURE_OPENAI_API_KEY="..."              # For Azure OpenAI (agents)
+# Podman (recommended - open source, daemonless)
+brew install podman
+podman machine init
+podman machine start
 
-# Optional: For specific providers
-export ETE_API_KEY="..."                       # For ETE LiteLLM Proxy (agents)
-export ANTHROPIC_API_KEY="..."                 # For Anthropic Claude
-export GOOGLE_API_KEY="..."                    # For Google Gemini
+# Or Docker (macOS via Homebrew)
+brew install --cask docker
 
-# Judge (itbench_evaluations) uses OpenAI-compatible env vars.
-# The leaderboard sets these automatically from `model_leaderboard.toml` [judge],
-# but set them yourself when running `itbench-eval` directly.
-export JUDGE_BASE_URL="https://openrouter.ai/api/v1"
-export JUDGE_API_KEY="$OR_API_KEY"
-export JUDGE_MODEL="google/gemini-2.5-pro"
+# Or download Docker Desktop: https://docs.docker.com/get-docker/
+
+# Verify it's running
+podman --version && podman ps
+# or: docker --version && docker ps
 ```
+
+> **Note:** If using Podman, create a `docker` alias: `alias docker=podman`
+
+**Why containers?** We use container-based MCP servers ([Altinity MCP](https://github.com/Altinity/altinity-mcp) for ClickHouse) to avoid Python dependency conflicts with `litellm[proxy]`.
+
+---
+
+## Environment Variables
+
+The project includes a comprehensive `.env.tmpl` template file with all configuration options.
+
+```bash
+# Copy the template to create your .env file
+cp .env.tmpl .env
+
+# Edit .env with your API keys and configuration
+# At minimum, you need:
+#   - OPENROUTER_API_KEY (primary model provider)
+
+# Load environment variables before running Zero
+source .env
+```
+
+The `.env.tmpl` template includes configuration for:
+- **Model Provider API Keys**: OpenRouter (primary), OpenAI, WatsonX
+- **Judge Configuration**: LLM-as-a-Judge evaluator settings
+- **ClickHouse MCP Server**: Database connection settings
+- **Kubernetes MCP Server**: Kubeconfig path
+
+For detailed information about each variable, see the comments in [.env.tmpl](.env.tmpl).
 
 ---
 

@@ -41,9 +41,11 @@ A modular framework for evaluating LLM agents on Site Reliability Engineering (S
 
 The SRE Tools module provides specialized MCP (Model Context Protocol) tools for incident investigation. These tools are automatically available to agents via the Zero runner.
 
+**Conditional MCP Loading**: Zero automatically loads only the MCP servers required by your prompt template. Prompt templates specify their required servers using YAML frontmatter (see [Prompt Templates](#prompt-templates)).
+
 | Tool | Description | Use Case |
 |------|-------------|----------|
-| **`alert_summary`** ⭐ | High-level overview of all alerts | **Start here** - Get alert types, entities, duration, frequency |
+| **`alert_summary`** | High-level overview of all alerts | **Start here** - Get alert types, entities, duration, frequency |
 | **`alert_analysis`** | Detailed alert analysis with filters/grouping | Filter by severity, group by alertname, track duration |
 | **`event_analysis`** | Analyze K8s events | Find warnings, unhealthy pods, scheduling issues |
 | **`metric_analysis`** | Batch metric queries with derived metrics | CPU throttling %, memory utilization across pods |
@@ -52,7 +54,7 @@ The SRE Tools module provides specialized MCP (Model Context Protocol) tools for
 | **`build_topology`** | Build operational topology graph | Map service dependencies, K8s object relationships |
 | **`topology_analysis`** | Analyze entity dependencies | Find upstream/downstream services, call chains |
 | **`k8s_spec_change_analysis`** | Track K8s spec changes | Identify config drift, correlate incidents with changes |
-| **`get_context_contract`** ⭐ | Aggregate full entity context | **All-in-one**: events, alerts, traces, metrics, dependencies |
+| **`get_context_contract`** | Aggregate full entity context | **All-in-one**: events, alerts, traces, metrics, dependencies |
 
 **Typical Investigation Flow:**
 ```
@@ -71,10 +73,13 @@ The SRE Tools module provides specialized MCP (Model Context Protocol) tools for
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.12 or 3.13 (avoid 3.14)
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip
 - [Codex CLI](https://github.com/openai/codex) installed (`npm install -g @openai/codex`)
+- **[Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/)** (required for ClickHouse MCP server)
 - API keys for your model provider (OpenRouter, Azure, etc.)
+
+> **Note:** The ClickHouse MCP server runs via Podman/Docker container. We use [Altinity MCP](https://github.com/Altinity/altinity-mcp) (Go-based) instead of the Python `mcp-clickhouse` package to avoid dependency conflicts with `litellm[proxy]` (which requires `uvicorn<0.32.0` and `rich==13.7.1`, incompatible with mcp-clickhouse's requirements).
 
 ### Installation
 
@@ -92,32 +97,36 @@ unzip -q 'v0.2-*.zip'
 rm -rf __MACOSX  # Clean up macOS metadata folder if present
 cd ../../..
 
-# Install dependencies
+# Install dependencies (includes ClickHouse and Kubernetes MCP servers)
 uv sync
+
 # or: python -m venv .venv && source .venv/bin/activate && pip install -e .
+
+# Configure environment variables (copy template and edit)
+cp .env.tmpl .env
+# Edit .env with your API keys and configuration
 ```
 
 ### Environment Variables
 
+**Recommended**: Use the provided `.env.tmpl` template:
+
 ```bash
-# LiteLLM Proxy - API keys for model providers
-export OPENROUTER_API_KEY="your-openrouter-key"    # For OpenRouter-proxied models
-export OPENAI_API_KEY="your-openai-key"            # For direct OpenAI models
+# Copy template and fill in your values
+cp .env.tmpl .env
 
-# WatsonX (optional - only if using WatsonX models)
-export IBMCLOUD_WATSONX_API_KEY="your-watsonx-api-key"
-export IBMCLOUD_WATSONX_PROJECT_ID="your-project-id"
-export IBMCLOUD_WATSONX_BASE_URL="https://us-south.ml.cloud.ibm.com"  # Or your region
-
-# Judge (itbench_evaluations) - uses OpenAI-compatible env vars
-# The leaderboard sets these automatically from [judge] config, but set them
-# yourself when running `itbench-eval` directly.
-export JUDGE_BASE_URL="https://openrouter.ai/api/v1"
-export JUDGE_API_KEY="$OPENROUTER_API_KEY"
-export JUDGE_MODEL="google/gemini-2.5-pro"
+# Edit .env with your API keys and configuration
+# Then source it before running Zero
+source .env
 ```
 
-**Tip**: Add these to your `~/.zshrc` or `~/.bashrc` to persist them across terminal sessions.
+The template includes configuration for:
+- **Model Provider API Keys**: OpenRouter (primary), with optional OpenAI and WatsonX
+- **ClickHouse MCP Server**: Database connection for retrieving logs, metrics, traces and Kubernetes events
+- **Kubernetes MCP Server**: Kubeconfig path for kubectl operations
+- **Judge**: LLM-as-a-Judge evaluator configuration (uses LiteLLM proxy by default)
+
+For detailed information about each variable, see the comments in [.env.tmpl](.env.tmpl).
 
 ---
 
@@ -170,6 +179,42 @@ uv run python -m zero --workspace ./outputs/agent_outputs/2/3 \
 ```
 
 📖 **Full documentation**: [zero/zero-config/README.md](./zero/zero-config/README.md)
+
+### Prompt Templates
+
+Prompt templates can specify which MCP servers they require using YAML frontmatter. Zero will automatically load only the specified servers.
+
+**Example: Offline Investigation** ([react_shell_investigation.md](zero/zero-config/prompts/react_shell_investigation.md))
+```markdown
+---
+mcp_servers:
+  - offline_incident_analysis
+---
+
+**Task**: Investigate incident from OFFLINE snapshot data...
+```
+
+**Example: Online Investigation** ([react_online.md](zero/zero-config/prompts/react_online.md))
+```markdown
+---
+mcp_servers:
+  - offline_incident_analysis
+  - clickhouse
+  - kubernetes
+---
+
+**Task**: Investigate incident from LIVE data sources...
+```
+
+**How it works**:
+1. Agent queries ClickHouse and Kubernetes to collect live data
+2. Writes collected data to workspace files (matching snapshot format)
+3. Uses `offline_incident_analysis` tools on the collected data
+4. Generates diagnosis using the same workflow as offline scenarios
+
+**Note**: Templates without frontmatter will load all configured MCP servers (backward compatible).
+
+---
 
 ### 3. Evaluate Agent Output
 

@@ -1,4 +1,9 @@
-**Task**: 
+---
+mcp_servers:
+  - offline_incident_analysis
+---
+
+**Task**:
 
 You are an expert SRE (Site Reliability Engineer) and Kubernetes SRE Support Agent investigating a production incident from OFFLINE snapshot data.
 

@@ -6,11 +6,15 @@ Handles workspace setup, config file copying, and prompt rendering.
 
 from __future__ import annotations
 
+import os
+import re
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+import yaml
 
 # Path to the bundled config directory (zero-config/)
 BUNDLED_CONFIG_DIR = Path(__file__).parent / "zero-config"
@@ -148,6 +152,88 @@ def _copy_directory(src: Path, dst: Path, verbose: bool = False) -> None:
         print(f"Copied {src} → {dst}")
 
 
+def _parse_yaml_frontmatter(prompt_content: str) -> dict | None:
+    """Parse YAML frontmatter from prompt template.
+
+    Returns dict with frontmatter data, or None if no frontmatter found.
+
+    Example frontmatter:
+    ---
+    mcp_servers:
+      - offline_incident_analysis
+      - clickhouse
+    ---
+    """
+    # Match YAML frontmatter: starts with ---, ends with ---
+    pattern = r"^---\s*\n(.*?)\n---\s*\n"
+    match = re.match(pattern, prompt_content, re.DOTALL)
+
+    if not match:
+        return None
+
+    yaml_content = match.group(1)
+
+    try:
+        data = yaml.safe_load(yaml_content)
+        # Return only if mcp_servers key exists and has values
+        if data and "mcp_servers" in data and data["mcp_servers"]:
+            return {"mcp_servers": data["mcp_servers"]}
+    except yaml.YAMLError:
+        # If YAML parsing fails, return None (backward compatibility)
+        pass
+
+    return None
+
+
+def _filter_mcp_servers(content: str, required_servers: list[str]) -> str:
+    """Filter MCP server configurations to only include required servers.
+
+    Removes entire [mcp_servers.X] sections that are not in required_servers list.
+    """
+    if not required_servers:
+        # If no servers specified, keep all (backward compatibility)
+        return content
+
+    # Use set for O(1) lookup
+    required_set = set(required_servers)
+    lines = content.split("\n")
+    filtered_lines = []
+    in_mcp_section = False
+    current_server = None
+
+    for line in lines:
+        # Check if we're starting an MCP server section (main header only, not subsections)
+        mcp_match = re.match(r"^\[mcp_servers\.([^\.\]]+)\]", line)
+
+        if mcp_match:
+            # Extract server name from section header
+            current_server = mcp_match.group(1)
+            in_mcp_section = True
+
+            # Keep this server if it's in the required list
+            if current_server in required_set:
+                filtered_lines.append(line)
+            else:
+                # Comment out disabled server
+                filtered_lines.append(f"# [mcp_servers.{current_server}] - disabled (not required by prompt template)")
+            continue
+
+        # Check if we're exiting MCP server sections
+        if line.startswith("[") and not line.startswith("[mcp_servers."):
+            in_mcp_section = False
+            current_server = None
+
+        # Handle line based on whether we're in a filtered section
+        if in_mcp_section and current_server not in required_set:
+            # Comment out lines in disabled sections
+            filtered_lines.append(f"# {line}" if line.strip() and not line.strip().startswith("#") else line)
+        else:
+            # Keep lines in enabled sections or outside MCP sections
+            filtered_lines.append(line)
+
+    return "\n".join(filtered_lines)
+
+
 def _generate_config(
     *,
     paths: ZeroWorkspacePaths,
@@ -163,6 +249,7 @@ def _generate_config(
     - Update sandbox writable_roots to workspace
     - Configure OTEL if trace collection enabled
     - Add trust entry for workspace
+    - Filter MCP servers based on prompt template frontmatter (if present)
 
     Note: experimental_instructions_file is NOT used because it's unreliable.
     Instead, prompts are passed directly to codex exec via runner.py.
@@ -173,13 +260,28 @@ def _generate_config(
 
     content = src_config.read_text()
 
-    # Copy custom prompt to workspace prompts dir (for interactive mode /prompts:name)
+    # Parse prompt template for MCP server requirements
+    required_mcp_servers = None
     if prompt_file_override:
         prompt_path = Path(prompt_file_override).expanduser().resolve()
         if not prompt_path.exists():
             raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
+
+        # Parse frontmatter to get required MCP servers
+        prompt_content = prompt_path.read_text()
+        frontmatter = _parse_yaml_frontmatter(prompt_content)
+        if frontmatter and "mcp_servers" in frontmatter:
+            required_mcp_servers = frontmatter["mcp_servers"]
+            if verbose:
+                print(f"Prompt requires MCP servers: {', '.join(required_mcp_servers)}")
+
+        # Copy custom prompt to workspace prompts dir (for interactive mode /prompts:name)
         dst_prompt = paths.prompts_dir / prompt_path.name
         shutil.copy2(prompt_path, dst_prompt)
+
+    # Filter MCP servers based on prompt requirements
+    if required_mcp_servers is not None:
+        content = _filter_mcp_servers(content, required_mcp_servers)
 
     # Update writable_roots to workspace directory
     ws_str = str(paths.workspace_dir)
@@ -188,6 +290,9 @@ def _generate_config(
     # Update OTEL configuration if trace collection enabled
     if collect_traces:
         content = _add_otel_config(content, otel_port)
+
+    # Substitute environment variables in MCP server configs
+    content = _substitute_env_vars(content)
 
     # Add trust entry for workspace
     content = _add_trust_entry(content, ws_str)
@@ -200,8 +305,6 @@ def _generate_config(
 
 def _update_writable_roots(content: str, workspace_path: str) -> str:
     """Update writable_roots in the config to point to workspace."""
-    import re
-
     # Match the writable_roots array and replace it
     pattern = r"(writable_roots\s*=\s*\[)[^\]]*(\])"
     replacement = rf'\g<1>\n    "{workspace_path}",\n\g<2>'
@@ -220,6 +323,33 @@ exporter = {{ otlp-http = {{ endpoint = "http://localhost:{otel_port}/v1/logs", 
 """
     # Add at the end of the file (before trust entry if present)
     return content.rstrip() + "\n" + otel_section
+
+
+def _substitute_env_vars(content: str) -> str:
+    """Substitute environment variable placeholders in MCP server configs.
+
+    Replaces ${VAR_NAME} style references with actual environment variable values.
+    Provides sensible defaults for common variables.
+    """
+    # Default values for common environment variables
+    defaults = {
+        "CLICKHOUSE_HOST": "localhost",
+        "CLICKHOUSE_PORT": "8123",
+        "CLICKHOUSE_USER": "default",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_PROXY_PATH": "",  # For reverse proxy paths (e.g., /clickhouse/clickhouse)
+        "CLICKHOUSE_SECURE": "false",  # Use HTTP by default
+        "CLICKHOUSE_VERIFY": "true",  # Verify SSL certificates
+        "KUBECONFIG": "",  # Empty means MCP will use default ~/.kube/config
+    }
+
+    def replace_env_var(match):
+        var_name = match.group(1)
+        return os.environ.get(var_name, defaults.get(var_name, ""))
+
+    content = re.sub(r"\$\{([A-Z_]+)\}", replace_env_var, content)
+
+    return content
 
 
 def _add_trust_entry(content: str, workspace_path: str) -> str:

@@ -11,7 +11,7 @@ approval_policy = "never"
 
 [profiles.sre_support_engineer.sandbox_workspace_write]
 writable_roots = []
-network_access = false
+network_access = true  # Required for ClickHouse and Kubernetes MCP servers
 
 # ============================================================================
 # MCP Servers
@@ -24,53 +24,43 @@ args = ["-m", "sre_tools.offline_incident_analysis"]
 [mcp_servers.offline_incident_analysis.env]
 PYTHONPATH = "python"
 
-<<<<<<< Updated upstream
-# ClickHouse MCP Server
-[mcp_servers.clickhouse]
-command = "python"
-args = ["-m", "sre_tools.clickhouse_mcp"]
-
-# Note: ClickHouse MCP inherits environment variables from your shell
-# Set these in your .env file (see .env.tmpl):
-#   CLICKHOUSE_HOST, CLICKHOUSE_PORT, CLICKHOUSE_USER,
-#   CLICKHOUSE_PASSWORD, CLICKHOUSE_DATABASE
-
-# Kubernetes MCP Server
-[mcp_servers.kubernetes]
-command = "python"
-args = ["-m", "sre_tools.kubernetes_mcp"]
-
-# Note: Kubernetes MCP inherits environment variables from your shell
-# Set KUBECONFIG in your .env file (see .env.tmpl) or it will use ~/.kube/config
-=======
-# ClickHouse MCP Server (Altinity - Go-based via Docker)
+# ClickHouse MCP Server (Altinity - Go-based via Docker/Podman)
 # Using Altinity MCP instead of mcp-clickhouse to avoid dependency conflicts
 # with litellm[proxy] (which requires uvicorn<0.32.0 and rich==13.7.1)
 [mcp_servers.clickhouse]
-command = "docker"
+command = "podman"
 args = [
     "run", "--rm", "-i", "--network=host",
     "ghcr.io/altinity/altinity-mcp:latest",
-    "--clickhouse-host", "CLICKHOUSE_HOST_PLACEHOLDER",
-    "--clickhouse-port", "CLICKHOUSE_PORT_PLACEHOLDER",
-    "--clickhouse-database", "CLICKHOUSE_DATABASE_PLACEHOLDER",
-    "--clickhouse-username", "CLICKHOUSE_USER_PLACEHOLDER",
-    "--clickhouse-password", "CLICKHOUSE_PASSWORD_PLACEHOLDER"
+    "--clickhouse-host", "${CLICKHOUSE_HOST}",
+    "--clickhouse-port", "${CLICKHOUSE_PORT}",
+    "--clickhouse-username", "${CLICKHOUSE_USER}",
+    "--clickhouse-password", "${CLICKHOUSE_PASSWORD}"
 ]
 
 # Note: ClickHouse credentials are substituted from environment variables
-# Set these in your .env file (see .env):
-#   CLICKHOUSE_HOST, CLICKHOUSE_PORT, CLICKHOUSE_USER,
-#   CLICKHOUSE_PASSWORD, CLICKHOUSE_DATABASE
+# Set these in your .env file (see .env.tmpl):
+#   CLICKHOUSE_HOST (default: localhost)
+#   CLICKHOUSE_PORT (default: 8123)
+#   CLICKHOUSE_USER (default: default)
+#   CLICKHOUSE_PASSWORD (default: empty)
+# Database defaults to "default" (override with --clickhouse-database if needed)
 
 # Kubernetes MCP Server (Python-based from containers/kubernetes-mcp-server)
 [mcp_servers.kubernetes]
 command = "uvx"
 args = ["mcp-kubernetes-server"]
 
+[mcp_servers.kubernetes.env]
+# Pass through KUBECONFIG from parent environment
+# This is populated from .env or shell environment
+KUBECONFIG = "${KUBECONFIG}"
+# Suppress FastMCP UI banner (causes JSON parsing errors in stdio mode)
+FASTMCP_NO_UI = "1"
+NO_COLOR = "1"
+
 # Note: Kubernetes MCP inherits KUBECONFIG from environment
 # Set KUBECONFIG in your .env file or it defaults to ~/.kube/config
->>>>>>> Stashed changes
 
 # ============================================================================
 # Model Provider - Local LiteLLM Proxy

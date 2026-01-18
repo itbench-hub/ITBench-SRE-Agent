@@ -11,10 +11,9 @@ Configuration is handled in zero/zero-config/config.toml:
 
 Environment variables (from .env):
   - CLICKHOUSE_HOST
-  - CLICKHOUSE_PORT
-  - CLICKHOUSE_USER
-  - CLICKHOUSE_PASSWORD
-  - CLICKHOUSE_DATABASE
+  - CLICKHOUSE_PORT (optional, defaults to 8123)
+  - CLICKHOUSE_USER (optional, defaults to "default")
+  - CLICKHOUSE_PASSWORD (optional, defaults to empty)
 
 See: https://github.com/Altinity/altinity-mcp
 """

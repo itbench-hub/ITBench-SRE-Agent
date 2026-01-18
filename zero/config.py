@@ -200,8 +200,8 @@ def _filter_mcp_servers(content: str, required_servers: list[str]) -> str:
     current_server = None
 
     for line in lines:
-        # Check if we're starting an MCP server section
-        mcp_match = re.match(r'^\[mcp_servers\.([^\]]+)(?:\.|])', line)
+        # Check if we're starting an MCP server section (main header only, not subsections)
+        mcp_match = re.match(r'^\[mcp_servers\.([^\.\]]+)\]', line)
 
         if mcp_match:
             # Extract server name from section header
@@ -329,6 +329,7 @@ def _substitute_env_vars(content: str) -> str:
     """Substitute environment variable placeholders in MCP server configs.
 
     Replaces placeholders like CLICKHOUSE_HOST_PLACEHOLDER with actual env var values.
+    Also substitutes ${VAR_NAME} style references with environment variable values.
     """
     import os
     from pathlib import Path
@@ -336,15 +337,23 @@ def _substitute_env_vars(content: str) -> str:
     # ClickHouse configuration
     ch_host = os.environ.get("CLICKHOUSE_HOST", "localhost")
     ch_port = os.environ.get("CLICKHOUSE_PORT", "8123")
-    ch_database = os.environ.get("CLICKHOUSE_DATABASE", "default")
     ch_user = os.environ.get("CLICKHOUSE_USER", "default")
     ch_password = os.environ.get("CLICKHOUSE_PASSWORD", "")
 
     content = content.replace("CLICKHOUSE_HOST_PLACEHOLDER", ch_host)
     content = content.replace("CLICKHOUSE_PORT_PLACEHOLDER", ch_port)
-    content = content.replace("CLICKHOUSE_DATABASE_PLACEHOLDER", ch_database)
     content = content.replace("CLICKHOUSE_USER_PLACEHOLDER", ch_user)
     content = content.replace("CLICKHOUSE_PASSWORD_PLACEHOLDER", ch_password)
+
+    # Substitute ${VAR_NAME} style environment variables
+    # This is used for KUBECONFIG and other dynamic env vars
+    def replace_env_var(match):
+        var_name = match.group(1)
+        # Get value from environment, or use empty string if not set
+        # (MCP servers will fall back to defaults like ~/.kube/config)
+        return os.environ.get(var_name, "")
+
+    content = re.sub(r'\$\{([A-Z_]+)\}', replace_env_var, content)
 
     return content
 

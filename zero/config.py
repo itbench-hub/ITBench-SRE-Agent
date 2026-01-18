@@ -337,6 +337,9 @@ def _substitute_env_vars(content: str) -> str:
         "CLICKHOUSE_PORT": "8123",
         "CLICKHOUSE_USER": "default",
         "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_PROXY_PATH": "",  # For reverse proxy paths (e.g., /clickhouse/clickhouse)
+        "CLICKHOUSE_SECURE": "false",  # Use HTTP by default
+        "CLICKHOUSE_VERIFY": "true",  # Verify SSL certificates
         "KUBECONFIG": "",  # Empty means MCP will use default ~/.kube/config
     }
 

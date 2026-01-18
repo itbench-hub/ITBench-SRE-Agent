@@ -24,27 +24,32 @@ args = ["-m", "sre_tools.offline_incident_analysis"]
 [mcp_servers.offline_incident_analysis.env]
 PYTHONPATH = "python"
 
-# ClickHouse MCP Server (Altinity - Go-based via Docker/Podman)
-# Using Altinity MCP instead of mcp-clickhouse to avoid dependency conflicts
-# with litellm[proxy] (which requires uvicorn<0.32.0 and rich==13.7.1)
+# ClickHouse MCP Server (Official Python mcp-clickhouse via Docker)
+# Running in Docker container to avoid dependency conflicts with litellm[proxy]
+# Supports PROXY_PATH for ClickHouse servers behind reverse proxies
 [mcp_servers.clickhouse]
 command = "podman"
 args = [
-    "run", "--rm", "-i", "--network=host",
-    "ghcr.io/altinity/altinity-mcp:latest",
-    "--clickhouse-host", "${CLICKHOUSE_HOST}",
-    "--clickhouse-port", "${CLICKHOUSE_PORT}",
-    "--clickhouse-username", "${CLICKHOUSE_USER}",
-    "--clickhouse-password", "${CLICKHOUSE_PASSWORD}"
+    "run", "--rm", "-i",
+    "-e", "CLICKHOUSE_HOST=${CLICKHOUSE_HOST}",
+    "-e", "CLICKHOUSE_PORT=${CLICKHOUSE_PORT}",
+    "-e", "CLICKHOUSE_USER=${CLICKHOUSE_USER}",
+    "-e", "CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}",
+    "-e", "PROXY_PATH=${CLICKHOUSE_PROXY_PATH}",
+    "-e", "CLICKHOUSE_SECURE=${CLICKHOUSE_SECURE}",
+    "-e", "CLICKHOUSE_VERIFY=${CLICKHOUSE_VERIFY}",
+    "mcp/clickhouse:latest"
 ]
 
 # Note: ClickHouse credentials are substituted from environment variables
 # Set these in your .env file (see .env.tmpl):
-#   CLICKHOUSE_HOST (default: localhost)
-#   CLICKHOUSE_PORT (default: 8123)
+#   CLICKHOUSE_HOST (hostname only, e.g., elb.amazonaws.com)
+#   CLICKHOUSE_PORT (default: 8123 or 80 for HTTP)
 #   CLICKHOUSE_USER (default: default)
 #   CLICKHOUSE_PASSWORD (default: empty)
-# Database defaults to "default" (override with --clickhouse-database if needed)
+#   CLICKHOUSE_PROXY_PATH (for reverse proxy paths, e.g., /clickhouse/clickhouse)
+#   CLICKHOUSE_SECURE (true/false for HTTPS, default: false)
+#   CLICKHOUSE_VERIFY (true/false for SSL verification, default: true)
 
 # Kubernetes MCP Server (Python-based from containers/kubernetes-mcp-server)
 [mcp_servers.kubernetes]

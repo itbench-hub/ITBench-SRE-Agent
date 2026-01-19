@@ -2,10 +2,11 @@
 
 ## Prerequisites
 
-- **Python 3.12 or 3.13** (required - avoid 3.14 due to compatibility issues)
+- **Python 3.12+**  (required - avoid 3.14 due to compatibility issues)
 - **uv** (recommended) or pip
 - **Codex CLI** (for running agents)
 - **[Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/)** (required for ClickHouse MCP server)
+- **[huggingface-cli](https://huggingface.co/docs/huggingface_hub/en/guides/cli)** (for downloading benchmark scenarios)
 - **API Keys** for LLM providers
 
 ---

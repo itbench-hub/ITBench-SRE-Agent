@@ -793,7 +793,7 @@ Example with actual scenario data:
 ```bash
 python -m sre_tools.offline_incident_analysis.tools build_topology \
   --arch-file workspace/shared/application_architecture.json \
-  --k8s-objects-file ./ITBench-Snapshots/snapshots/sre/v0.1-*/Scenario-105/k8s_objects_otel-demo_chaos-mesh.tsv \
+  --k8s-objects-file ./ITBench-Lite/snapshots/sre/v0.2-*/Scenario-105/k8s_objects_otel-demo_chaos-mesh.tsv \
   --output-file /tmp/topology.json
 ```
 

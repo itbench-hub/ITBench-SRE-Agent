@@ -10,7 +10,7 @@
 #   - A directory containing Scenario-* subdirs
 #   - A directory containing numbered subdirs (1/, 2/, 3/) with ground_truth.yaml
 #   - A nested structure like ./snapshots/sre/version/uuid/
-scenarios_dir = "./ITBench-Snapshots"
+scenarios_dir = "./ITBench-Lite"
 
 # Output directory for leaderboard results
 # Structure: leaderboard_dir/{prompt}_{model}_{commit}/{scenario}/{run_id}/

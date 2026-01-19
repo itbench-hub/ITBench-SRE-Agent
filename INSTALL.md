@@ -204,7 +204,7 @@ uv run zero --workspace /tmp/test-interactive \
 # Run agent with prompt template (requires a valid snapshot directory)
 uv run zero --workspace /tmp/test-exec \
     --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
-    --variable "SNAPSHOT_DIRS=/path/to/ITBench-Snapshots/snapshots/sre/v0.1-.../Scenario-1" \
+    --variable "SNAPSHOT_DIRS=/path/to/ITBench-Lite/snapshots/sre/v0.2-.../Scenario-1" \
     -- exec --full-auto -m "openai/gpt-4o-mini" \
     "Start the investigation"
 ```

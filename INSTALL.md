@@ -4,6 +4,7 @@
 
 - **Python 3.12+**  (required - avoid 3.14 due to compatibility issues)
 - **uv** (recommended) or pip
+- **[Node.js and npm](https://nodejs.org/)** (required to install Codex CLI)
 - **Codex CLI** (for running agents)
 - **[Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/)** (required for ClickHouse MCP server)
 - **API Keys** for LLM providers

@@ -75,6 +75,7 @@ The SRE Tools module provides specialized MCP (Model Context Protocol) tools for
 
 - Python 3.12 or 3.13 (avoid 3.14)
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip
+- [Node.js and npm](https://nodejs.org/) (required to install Codex CLI)
 - [Codex CLI](https://github.com/openai/codex) installed (`npm install -g @openai/codex`)
 - **[Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/)** (required for ClickHouse MCP server)
 - API keys for your model provider (OpenRouter, Azure, etc.)

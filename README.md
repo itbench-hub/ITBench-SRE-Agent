@@ -219,6 +219,60 @@ mcp_servers:
 
 ---
 
+### Running Against Live Environments
+
+To investigate incidents in live environments (using [react_online.md](zero/zero-config/prompts/react_online.md)), you need to configure access to ClickHouse and Kubernetes.
+
+For instructions on setting up a live ITBench environment, see: https://github.com/itbench-hub/ITBench/tree/main/scenarios/sre
+
+#### Prerequisites
+
+1. **ClickHouse database** with observability data (logs, metrics, traces, events)
+2. **Kubernetes cluster** with appropriate kubeconfig access
+3. **Podman or Docker** running (for ClickHouse MCP server)
+
+#### Setup Steps
+
+1. **Configure environment variables** in `.env`:
+
+```bash
+# ClickHouse connection
+export CLICKHOUSE_HOST=localhost
+export CLICKHOUSE_PORT=80
+export CLICKHOUSE_USER=default
+export CLICKHOUSE_PASSWORD=your-password
+export CLICKHOUSE_PROXY_PATH=/clickhouse/clickhouse  # Optional: if behind reverse proxy
+export CLICKHOUSE_SECURE=false  # Set to 'true' for HTTPS
+export CLICKHOUSE_VERIFY=true   # SSL certificate verification
+
+# Kubernetes (optional - defaults to ~/.kube/config)
+export KUBECONFIG=/path/to/your/kubeconfig
+```
+
+2. **Load environment variables**:
+
+```bash
+# Source the .env file to export variables
+source .env
+
+# Verify they're loaded
+echo "CLICKHOUSE_HOST: $CLICKHOUSE_HOST"
+echo "CLICKHOUSE_PROXY_PATH: $CLICKHOUSE_PROXY_PATH"
+echo "KUBECONFIG: $KUBECONFIG"
+```
+
+3. **Run Zero with online investigation prompt**:
+
+```bash
+# Run agent against live environment
+# Zero will automatically start the ClickHouse and Kubernetes MCP servers
+uv run python -m zero --workspace ./outputs/agent_outputs/23/1 \
+    --prompt-file ./zero/zero-config/prompts/react_online.md \
+    -- exec --full-auto -m "gemini-2.5-pro" "Begin investigation"
+```
+
+---
+
 ### 3. Evaluate Agent Output
 
 Evaluate agent outputs against ground truth using the `itbench_evaluations` judge (LLM-as-a-Judge).

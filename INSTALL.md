@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - **Python 3.12+**  (required - avoid 3.14 due to compatibility issues)
-- **uv** (recommended) or pip
+- **[uv](https://github.com/astral-sh/uv)** (package manager)
 - **[Node.js and npm](https://nodejs.org/)** (required to install Codex CLI)
 - **Codex CLI** (for running agents)
 - **[Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/)** (required for ClickHouse MCP server)
@@ -12,8 +12,6 @@
 ---
 
 ## Quick Install
-
-### Option 1: Using uv (Recommended)
 
 ```bash
 # Clone the repository
@@ -33,39 +31,8 @@ uv run hf download \
   --local-dir ./ITBench-Lite
 
 # Verify installation
-uv run zero --help
-uv run itbench-eval --help
-```
-
-### Option 2: Using pip
-
-```bash
-# Clone the repository
-git clone https://github.com/itbench-hub/ITBench-SRE-Agent.git
-cd ITBench-SRE-Agent
-
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Install the package in editable mode
-pip install -e .
-
-# Download benchmark scenarios from Hugging Face
-# Start with a few scenarios to get started quickly (e.g., Scenario-2 and Scenario-5)
-hf download \
-  ibm-research/ITBench-Lite \
-  --repo-type dataset \
-  --include "snapshots/sre/v0.2-*/Scenario-2/**/*" \
-  --include "snapshots/sre/v0.2-*/Scenario-5/**/*" \
-  --local-dir ./ITBench-Lite
-
-# Verify installation
-zero --help
-itbench-eval --help
+uv run python -m zero --help
+uv run python -m itbench_evaluations --help
 ```
 
 ---
@@ -142,21 +109,14 @@ For detailed information about each variable, see the comments in [.env.tmpl](.e
 
 ```bash
 # Zero agent runner
-zero --help
+uv run python -m zero --help
 
 # Leaderboard runner
-itbench-leaderboard --help
+uv run python -m itbench_leaderboard --help
 
 # Judge runner
-itbench-eval --help
+uv run python -m itbench_evaluations --help
 ```
-
-### Common gotchas
-
-- **`ModuleNotFoundError: No module named 'numpy'`**: you're running outside the managed environment.
-  - If you installed with **uv**, run via uv: `uv run itbench-eval --help` (or `uv run python -m itbench_evaluations --help`).
-  - If you installed with **pip**, make sure your venv is activated: `source .venv/bin/activate`.
-- **Command name uses dashes**: the CLI is `itbench-eval` (not `itbench_evaluations`).
 
 ### 2. Check MCP tools module loads
 
@@ -195,7 +155,7 @@ Available SRE MCP tools:
 
 ```bash
 # Opens Codex TUI with MCP tools available
-uv run zero --workspace /tmp/test-interactive \
+uv run python -m zero --workspace /tmp/test-interactive \
     -- -m "openai/gpt-4o-mini"
 ```
 
@@ -203,7 +163,7 @@ uv run zero --workspace /tmp/test-interactive \
 
 ```bash
 # Run agent with prompt template (requires a valid snapshot directory)
-uv run zero --workspace /tmp/test-exec \
+uv run python -m zero --workspace /tmp/test-exec \
     --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=/path/to/ITBench-Lite/snapshots/sre/v0.2-.../Scenario-1" \
     -- exec --full-auto -m "openai/gpt-4o-mini" \
@@ -214,7 +174,7 @@ uv run zero --workspace /tmp/test-exec \
 
 ```bash
 # Quick test without prompt template
-uv run zero --workspace /tmp/test-simple \
+uv run python -m zero --workspace /tmp/test-simple \
     -- exec -m "openai/gpt-4o-mini" "What tools do you have available?"
 ```
 
@@ -243,11 +203,11 @@ And these Python packages:
 
 ### "Command not found: zero"
 
-Make sure the package is installed and your virtual environment is activated:
+Make sure the package is installed:
 
 ```bash
-source .venv/bin/activate  # or: uv shell
-which zero
+uv run zero --help
+# or: which zero (if using uv shell)
 ```
 
 ### "ModuleNotFoundError: No module named 'tomllib'"

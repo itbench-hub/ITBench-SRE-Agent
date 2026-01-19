@@ -75,6 +75,7 @@ The SRE Tools module provides specialized MCP (Model Context Protocol) tools for
 
 - Python 3.12 or 3.13 (avoid 3.14)
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip
+- [Node.js and npm](https://nodejs.org/) (required to install Codex CLI)
 - [Codex CLI](https://github.com/openai/codex) installed (`npm install -g @openai/codex`)
 - **[Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/)** (required for ClickHouse MCP server)
 - API keys for your model provider (OpenRouter, Azure, etc.)
@@ -84,27 +85,29 @@ The SRE Tools module provides specialized MCP (Model Context Protocol) tools for
 ### Installation
 
 ```bash
-# Clone with submodules (ITBench-Lite is a submodule)
-git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
+# Clone the repository
+git clone https://github.com/itbench-hub/ITBench-SRE-Agent.git
 cd ITBench-SRE-Agent
 
-# If you already cloned without --recurse-submodules, initialize the submodule:
-# git submodule update --init --recursive
-
-# Extract the benchmark snapshots (they are compressed)
-cd ITBench-Lite/snapshots/sre
-unzip -q 'v0.2-*.zip'
-rm -rf __MACOSX  # Clean up macOS metadata folder if present
-cd ../../..
-
-# Install dependencies (includes ClickHouse and Kubernetes MCP servers)
+# Install dependencies
 uv sync
-
 # or: python -m venv .venv && source .venv/bin/activate && pip install -e .
 
-# Configure environment variables (copy template and edit)
-cp .env.tmpl .env
-# Edit .env with your API keys and configuration
+# Download benchmark scenarios from Hugging Face
+# Start with a few scenarios to get started quickly (e.g., Scenario-2 and Scenario-5)
+uv run hf download \
+  ibm-research/ITBench-Lite \
+  --repo-type dataset \
+  --include "snapshots/sre/v0.2-*/Scenario-2/**/*" \
+  --include "snapshots/sre/v0.2-*/Scenario-5/**/*" \
+  --local-dir ./ITBench-Lite
+
+# Or download all scenarios if you need the full benchmark:
+# uv run hf download \
+#   ibm-research/ITBench-Lite \
+#   --repo-type dataset \
+#   --include "snapshots/sre/v0.2-*/Scenario-*/**/*" \
+#   --local-dir ./ITBench-Lite
 ```
 
 ### Environment Variables
@@ -311,7 +314,7 @@ ITBench-SRE-Agent/
 │   └── offline_incident_analysis/ # Tool implementations
 │       └── tools.py               # All SRE analysis tools
 │
-└── ITBench-Lite/                  # Benchmark data (submodule)
+└── ITBench-Lite/                  # Benchmark data (downloaded from HF)
     └── snapshots/sre/...
 ```
 

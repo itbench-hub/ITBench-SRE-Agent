@@ -2,8 +2,9 @@
 
 ## Prerequisites
 
-- **Python 3.12 or 3.13** (required - avoid 3.14 due to compatibility issues)
+- **Python 3.12+**  (required - avoid 3.14 due to compatibility issues)
 - **uv** (recommended) or pip
+- **[Node.js and npm](https://nodejs.org/)** (required to install Codex CLI)
 - **Codex CLI** (for running agents)
 - **[Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/)** (required for ClickHouse MCP server)
 - **API Keys** for LLM providers
@@ -15,15 +16,21 @@
 ### Option 1: Using uv (Recommended)
 
 ```bash
-# Clone the repository with submodules
-git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
+# Clone the repository
+git clone https://github.com/itbench-hub/ITBench-SRE-Agent.git
 cd ITBench-SRE-Agent
-
-# If you already cloned without --recurse-submodules:
-git submodule update --init --recursive
 
 # Install with uv
 uv sync
+
+# Download benchmark scenarios from Hugging Face
+# Start with a few scenarios to get started quickly (e.g., Scenario-2 and Scenario-5)
+uv run hf download \
+  ibm-research/ITBench-Lite \
+  --repo-type dataset \
+  --include "snapshots/sre/v0.2-*/Scenario-2/**/*" \
+  --include "snapshots/sre/v0.2-*/Scenario-5/**/*" \
+  --local-dir ./ITBench-Lite
 
 # Verify installation
 uv run zero --help
@@ -33,12 +40,9 @@ uv run itbench-eval --help
 ### Option 2: Using pip
 
 ```bash
-# Clone the repository with submodules
-git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
+# Clone the repository
+git clone https://github.com/itbench-hub/ITBench-SRE-Agent.git
 cd ITBench-SRE-Agent
-
-# If you already cloned without --recurse-submodules:
-git submodule update --init --recursive
 
 # Create virtual environment
 python -m venv .venv
@@ -49,6 +53,15 @@ pip install -r requirements.txt
 
 # Install the package in editable mode
 pip install -e .
+
+# Download benchmark scenarios from Hugging Face
+# Start with a few scenarios to get started quickly (e.g., Scenario-2 and Scenario-5)
+hf download \
+  ibm-research/ITBench-Lite \
+  --repo-type dataset \
+  --include "snapshots/sre/v0.2-*/Scenario-2/**/*" \
+  --include "snapshots/sre/v0.2-*/Scenario-5/**/*" \
+  --local-dir ./ITBench-Lite
 
 # Verify installation
 zero --help
@@ -192,7 +205,7 @@ uv run zero --workspace /tmp/test-interactive \
 # Run agent with prompt template (requires a valid snapshot directory)
 uv run zero --workspace /tmp/test-exec \
     --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
-    --variable "SNAPSHOT_DIRS=/path/to/ITBench-Snapshots/snapshots/sre/v0.1-.../Scenario-1" \
+    --variable "SNAPSHOT_DIRS=/path/to/ITBench-Lite/snapshots/sre/v0.2-.../Scenario-1" \
     -- exec --full-auto -m "openai/gpt-4o-mini" \
     "Start the investigation"
 ```
@@ -274,15 +287,28 @@ ls -la /tmp/your-workspace/config.toml
 uv run zero --workspace /tmp/debug --verbose -- -m "openai/gpt-4o-mini"
 ```
 
-### ITBench-Snapshots directory is empty
+### ITBench-Lite directory is empty or missing scenarios
 
-The benchmark data is in a git submodule. Initialize it:
+The benchmark data needs to be downloaded from Hugging Face:
 
 ```bash
-git submodule update --init --recursive
+# Download specific scenarios (recommended - faster and smaller)
+uv run hf download \
+  ibm-research/ITBench-Lite \
+  --repo-type dataset \
+  --include "snapshots/sre/v0.2-*/Scenario-2/**/*" \
+  --include "snapshots/sre/v0.2-*/Scenario-5/**/*" \
+  --local-dir ./ITBench-Lite
+
+# Or download all scenarios if needed
+# uv run hf download \
+#   ibm-research/ITBench-Lite \
+#   --repo-type dataset \
+#   --include "snapshots/sre/v0.2-*/Scenario-*/**/*" \
+#   --local-dir ./ITBench-Lite
 
 # Verify
-ls ITBench-Snapshots/snapshots/sre/
+ls ITBench-Lite/snapshots/sre/
 ```
 
 ### Agent not producing output file

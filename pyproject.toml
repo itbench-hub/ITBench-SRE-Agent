@@ -22,6 +22,8 @@ dependencies = [
     "litellm[proxy]>=1.80.11",
     # Kubernetes MCP Server (Python-based, no container needed)
     "mcp-kubernetes-server>=0.0.1",
+    # Dataset download
+    "huggingface-hub>=0.20.0",
 ]
 description = "ITBench SRE Agent - AI-powered incident investigation for SRE benchmarks"
 name = "itbench-sre-agent"

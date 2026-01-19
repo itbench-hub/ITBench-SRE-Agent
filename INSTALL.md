@@ -15,15 +15,21 @@
 ### Option 1: Using uv (Recommended)
 
 ```bash
-# Clone the repository with submodules
-git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
+# Clone the repository
+git clone https://github.com/itbench-hub/ITBench-SRE-Agent.git
 cd ITBench-SRE-Agent
-
-# If you already cloned without --recurse-submodules:
-git submodule update --init --recursive
 
 # Install with uv
 uv sync
+
+# Download benchmark scenarios from Hugging Face
+# Start with a few scenarios to get started quickly (e.g., Scenario-2 and Scenario-5)
+uv run huggingface-cli download \
+  ibm-research/ITBench-Lite \
+  --repo-type dataset \
+  --include "snapshots/sre/v0.2-*/Scenario-2/**/*" \
+  --include "snapshots/sre/v0.2-*/Scenario-5/**/*" \
+  --local-dir ./ITBench-Lite
 
 # Verify installation
 uv run zero --help
@@ -33,12 +39,9 @@ uv run itbench-eval --help
 ### Option 2: Using pip
 
 ```bash
-# Clone the repository with submodules
-git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
+# Clone the repository
+git clone https://github.com/itbench-hub/ITBench-SRE-Agent.git
 cd ITBench-SRE-Agent
-
-# If you already cloned without --recurse-submodules:
-git submodule update --init --recursive
 
 # Create virtual environment
 python -m venv .venv
@@ -49,6 +52,15 @@ pip install -r requirements.txt
 
 # Install the package in editable mode
 pip install -e .
+
+# Download benchmark scenarios from Hugging Face
+# Start with a few scenarios to get started quickly (e.g., Scenario-2 and Scenario-5)
+huggingface-cli download \
+  ibm-research/ITBench-Lite \
+  --repo-type dataset \
+  --include "snapshots/sre/v0.2-*/Scenario-2/**/*" \
+  --include "snapshots/sre/v0.2-*/Scenario-5/**/*" \
+  --local-dir ./ITBench-Lite
 
 # Verify installation
 zero --help
@@ -274,15 +286,28 @@ ls -la /tmp/your-workspace/config.toml
 uv run zero --workspace /tmp/debug --verbose -- -m "openai/gpt-4o-mini"
 ```
 
-### ITBench-Snapshots directory is empty
+### ITBench-Lite directory is empty or missing scenarios
 
-The benchmark data is in a git submodule. Initialize it:
+The benchmark data needs to be downloaded from Hugging Face:
 
 ```bash
-git submodule update --init --recursive
+# Download specific scenarios (recommended - faster and smaller)
+uv run huggingface-cli download \
+  ibm-research/ITBench-Lite \
+  --repo-type dataset \
+  --include "snapshots/sre/v0.2-*/Scenario-2/**/*" \
+  --include "snapshots/sre/v0.2-*/Scenario-5/**/*" \
+  --local-dir ./ITBench-Lite
+
+# Or download all scenarios if needed
+# uv run huggingface-cli download \
+#   ibm-research/ITBench-Lite \
+#   --repo-type dataset \
+#   --include "snapshots/sre/v0.2-*/Scenario-*/**/*" \
+#   --local-dir ./ITBench-Lite
 
 # Verify
-ls ITBench-Snapshots/snapshots/sre/
+ls ITBench-Lite/snapshots/sre/
 ```
 
 ### Agent not producing output file

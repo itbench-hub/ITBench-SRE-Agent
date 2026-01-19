@@ -6,7 +6,6 @@
 - **uv** (recommended) or pip
 - **Codex CLI** (for running agents)
 - **[Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/)** (required for ClickHouse MCP server)
-- **[huggingface-cli](https://huggingface.co/docs/huggingface_hub/en/guides/cli)** (for downloading benchmark scenarios)
 - **API Keys** for LLM providers
 
 ---
@@ -25,7 +24,7 @@ uv sync
 
 # Download benchmark scenarios from Hugging Face
 # Start with a few scenarios to get started quickly (e.g., Scenario-2 and Scenario-5)
-uv run huggingface-cli download \
+uv run hf download \
   ibm-research/ITBench-Lite \
   --repo-type dataset \
   --include "snapshots/sre/v0.2-*/Scenario-2/**/*" \
@@ -56,7 +55,7 @@ pip install -e .
 
 # Download benchmark scenarios from Hugging Face
 # Start with a few scenarios to get started quickly (e.g., Scenario-2 and Scenario-5)
-huggingface-cli download \
+hf download \
   ibm-research/ITBench-Lite \
   --repo-type dataset \
   --include "snapshots/sre/v0.2-*/Scenario-2/**/*" \
@@ -293,7 +292,7 @@ The benchmark data needs to be downloaded from Hugging Face:
 
 ```bash
 # Download specific scenarios (recommended - faster and smaller)
-uv run huggingface-cli download \
+uv run hf download \
   ibm-research/ITBench-Lite \
   --repo-type dataset \
   --include "snapshots/sre/v0.2-*/Scenario-2/**/*" \
@@ -301,7 +300,7 @@ uv run huggingface-cli download \
   --local-dir ./ITBench-Lite
 
 # Or download all scenarios if needed
-# uv run huggingface-cli download \
+# uv run hf download \
 #   ibm-research/ITBench-Lite \
 #   --repo-type dataset \
 #   --include "snapshots/sre/v0.2-*/Scenario-*/**/*" \

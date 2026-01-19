@@ -76,7 +76,6 @@ The SRE Tools module provides specialized MCP (Model Context Protocol) tools for
 - Python 3.12 or 3.13 (avoid 3.14)
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip
 - [Codex CLI](https://github.com/openai/codex) installed (`npm install -g @openai/codex`)
-- [huggingface-cli](https://huggingface.co/docs/huggingface_hub/en/guides/cli) (for downloading benchmark scenarios)
 - **[Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/)** (required for ClickHouse MCP server)
 - API keys for your model provider (OpenRouter, Azure, etc.)
 
@@ -95,7 +94,7 @@ uv sync
 
 # Download benchmark scenarios from Hugging Face
 # Start with a few scenarios to get started quickly (e.g., Scenario-2 and Scenario-5)
-uv run huggingface-cli download \
+uv run hf download \
   ibm-research/ITBench-Lite \
   --repo-type dataset \
   --include "snapshots/sre/v0.2-*/Scenario-2/**/*" \
@@ -103,7 +102,7 @@ uv run huggingface-cli download \
   --local-dir ./ITBench-Lite
 
 # Or download all scenarios if you need the full benchmark:
-# uv run huggingface-cli download \
+# uv run hf download \
 #   ibm-research/ITBench-Lite \
 #   --repo-type dataset \
 #   --include "snapshots/sre/v0.2-*/Scenario-*/**/*" \

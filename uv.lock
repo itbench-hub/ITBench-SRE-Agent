@@ -761,6 +761,7 @@ source = { editable = "." }
 dependencies = [
     { name = "asteval" },
     { name = "drain3" },
+    { name = "huggingface-hub" },
     { name = "litellm", extra = ["proxy"] },
     { name = "mcp" },
     { name = "mcp-kubernetes-server" },
@@ -785,6 +786,7 @@ requires-dist = [
     { name = "asteval", specifier = ">=1.0.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=24.0.0" },
     { name = "drain3", specifier = ">=0.9.11" },
+    { name = "huggingface-hub", specifier = ">=1.2.4" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.13.0" },
     { name = "litellm", specifier = ">=1.80.11" },
     { name = "litellm", extras = ["proxy"], specifier = ">=1.80.11" },

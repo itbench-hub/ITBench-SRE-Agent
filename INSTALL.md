@@ -256,15 +256,15 @@ The benchmark data needs to be downloaded from Hugging Face:
 uv run hf download \
   ibm-research/ITBench-Lite \
   --repo-type dataset \
-  --include "snapshots/sre/v0.2-*/Scenario-2/**/*" \
-  --include "snapshots/sre/v0.2-*/Scenario-5/**/*" \
+  --include "snapshots/sre/v0.2-*/Scenario-2/*" \
+  --include "snapshots/sre/v0.2-*/Scenario-5/*" \
   --local-dir ./ITBench-Lite
 
 # Or download all scenarios if needed
 # uv run hf download \
 #   ibm-research/ITBench-Lite \
 #   --repo-type dataset \
-#   --include "snapshots/sre/v0.2-*/Scenario-*/**/*" \
+#   --include "snapshots/sre/v0.2-*/Scenario-*" \
 #   --local-dir ./ITBench-Lite
 
 # Verify

@@ -106,7 +106,7 @@ uv run hf download \
 # uv run hf download \
 #   ibm-research/ITBench-Lite \
 #   --repo-type dataset \
-#   --include "snapshots/sre/v0.2-*/Scenario-*/**/*" \
+#   --include "snapshots/sre/v0.2-*/Scenario-*" \
 #   --local-dir ./ITBench-Lite
 ```
 

@@ -80,14 +80,17 @@ The SRE Tools module provides specialized MCP (Model Context Protocol) tools for
 - **[Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/)** (required for ClickHouse MCP server)
 - API keys for your model provider (OpenRouter, Azure, etc.)
 
-> **Note:** The ClickHouse MCP server runs via Podman/Docker container. We use [Altinity MCP](https://github.com/Altinity/altinity-mcp) (Go-based) instead of the Python `mcp-clickhouse` package to avoid dependency conflicts with `litellm[proxy]` (which requires `uvicorn<0.32.0` and `rich==13.7.1`, incompatible with mcp-clickhouse's requirements).
+> **Note:** The ClickHouse and Instana MCP servers run via Podman/Docker containers. We use the official [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) and [mcp-instana](https://github.com/instana/mcp-instana) Docker images instead of Python packages to avoid dependency conflicts with `litellm[proxy]` (which requires `rich==13.7.1`, incompatible with mcp-instana's `rich>=13.9.4`).
 
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/itbench-hub/ITBench-SRE-Agent.git
+# Clone the repository with submodules
+git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
 cd ITBench-SRE-Agent
+
+# If you already cloned without --recurse-submodules, initialize submodules:
+# git submodule update --init --recursive
 
 # Install dependencies
 uv sync
@@ -219,22 +222,131 @@ mcp_servers:
 
 ---
 
+### Setting Up MCP Servers (Docker/Podman)
+
+Some MCP servers run in Docker/Podman containers to avoid Python dependency conflicts with `litellm[proxy]`.
+
+#### Pull/Build MCP Server Images
+
+**ClickHouse MCP (pre-built image available):**
+```bash
+# Pull ClickHouse MCP server (for live environment metrics/logs)
+podman pull docker.io/mcp/clickhouse:latest
+# (or: docker pull docker.io/mcp/clickhouse:latest)
+```
+
+**Instana MCP (requires local build - no pre-built image):**
+```bash
+# Initialize the submodule (included in this repository)
+git submodule update --init --recursive
+
+# Build Instana MCP server (for Instana APM integration - optional)
+cd sre_tools/instana_mcp/mcp-instana
+podman build -t mcp-instana:latest .
+# (or: docker build -t mcp-instana:latest .)
+cd ../../..
+```
+
+**Verify images:**
+```bash
+podman images | grep -E "mcp/clickhouse|mcp-instana"
+# (or: docker images | grep -E "mcp/clickhouse|mcp-instana")
+```
+
+> **Note:** Examples use Podman (recommended). If using Docker instead, replace `podman` with `docker` in all commands, or create an alias: `alias docker=podman`
+
+#### How Zero Manages MCP Servers
+
+**Important:** Docker images must be pre-pulled before running Zero (see commands above). Zero does not automatically download images.
+
+Zero manages Docker-based MCP servers through the workspace `config.toml`:
+
+**Automatic Start via Codex**: When you run Zero with a prompt template that requires `clickhouse` or `instana_mcp` servers, the Codex CLI will:
+   - Start the container with appropriate environment variables (from your `.env` file)
+   - Connect to the MCP server via stdio
+   - Clean up the container when the agent finishes
+
+**ClickHouse MCP:**
+```bash
+# Start ClickHouse MCP server
+podman run -d --name mcp-clickhouse \
+  -p 3000:3000 \
+  -e CLICKHOUSE_HOST=$CLICKHOUSE_HOST \
+  -e CLICKHOUSE_PORT=$CLICKHOUSE_PORT \
+  -e CLICKHOUSE_USER=$CLICKHOUSE_USER \
+  -e CLICKHOUSE_PASSWORD=$CLICKHOUSE_PASSWORD \
+  -e CLICKHOUSE_PROXY_PATH=$CLICKHOUSE_PROXY_PATH \
+  -e CLICKHOUSE_SECURE=$CLICKHOUSE_SECURE \
+  -e CLICKHOUSE_VERIFY=$CLICKHOUSE_VERIFY \
+  docker.io/mcp/clickhouse:latest
+# (or: use 'docker run' instead of 'podman run')
+
+# Check logs
+podman logs mcp-clickhouse
+# (or: docker logs mcp-clickhouse)
+
+# Stop when done
+podman stop mcp-clickhouse && podman rm mcp-clickhouse
+# (or: docker stop mcp-clickhouse && docker rm mcp-clickhouse)
+```
+
+**Instana MCP:**
+```bash
+# Note: Instana MCP manual start is NOT recommended as Codex expects stdio transport
+# This example shows HTTP mode (port 8080) which requires different client configuration
+
+# Start Instana MCP server in HTTP mode (for debugging/testing only)
+podman run -d --name mcp-instana \
+  -p 8080:8080 \
+  -e INSTANA_BASE_URL=$INSTANA_BASE_URL \
+  -e INSTANA_API_TOKEN=$INSTANA_API_TOKEN \
+  mcp-instana:latest
+  # Note: HTTP mode is the default; stdio mode cannot run in detached mode
+# (or: use 'docker run' instead of 'podman run')
+
+# Check logs
+podman logs mcp-instana
+# (or: docker logs mcp-instana)
+
+# Stop when done
+podman stop mcp-instana && podman rm mcp-instana
+# (or: docker stop mcp-instana && docker rm mcp-instana)
+```
+
+**Important:**
+- For ClickHouse: Manual start requires updating port numbers in [zero/zero-config/config.toml](zero/zero-config/config.toml)
+- For Instana: Manual start is NOT recommended - let Codex manage it in stdio mode automatically
+
+---
+
 ### Running Against Live Environments
 
-To investigate incidents in live environments (using [react_online.md](zero/zero-config/prompts/react_online.md)), you need to configure access to ClickHouse and Kubernetes.
+To investigate incidents in live environments, you can use different observability backends:
 
-For instructions on setting up a live ITBench environment, see: https://github.com/itbench-hub/ITBench/tree/main/scenarios/sre
+- **[react_online.md](zero/zero-config/prompts/react_online.md)** - ClickHouse + Kubernetes
+- **[react_online_instana.md](zero/zero-config/prompts/react_online_instana.md)** - Instana APM + Kubernetes
+
+**For ClickHouse setup:** Instructions for setting up a live ITBench environment with ClickHouse, see: https://github.com/itbench-hub/ITBench/tree/main/scenarios/sre
+
+**For Instana setup:** Use your existing Instana APM instance and configure the API credentials below.
 
 #### Prerequisites
 
+**Option 1: ClickHouse Backend**
 1. **ClickHouse database** with observability data (logs, metrics, traces, events)
 2. **Kubernetes cluster** with appropriate kubeconfig access
 3. **Podman or Docker** running (for ClickHouse MCP server)
+
+**Option 2: Instana Backend**
+1. **Instana APM instance** with API access
+2. **Kubernetes cluster** with appropriate kubeconfig access
+3. **Instana API token** (from Instana UI: Settings → API Tokens)
 
 #### Setup Steps
 
 1. **Configure environment variables** in `.env`:
 
+**For ClickHouse backend:**
 ```bash
 # ClickHouse connection
 export CLICKHOUSE_HOST=localhost
@@ -244,6 +356,16 @@ export CLICKHOUSE_PASSWORD=your-password
 export CLICKHOUSE_PROXY_PATH=/clickhouse/clickhouse  # Optional: if behind reverse proxy
 export CLICKHOUSE_SECURE=false  # Set to 'true' for HTTPS
 export CLICKHOUSE_VERIFY=true   # SSL certificate verification
+
+# Kubernetes (optional - defaults to ~/.kube/config)
+export KUBECONFIG=/path/to/your/kubeconfig
+```
+
+**For Instana backend:**
+```bash
+# Instana APM connection
+export INSTANA_BASE_URL=https://your-instana-instance.instana.io
+export INSTANA_API_TOKEN=your-instana-api-token
 
 # Kubernetes (optional - defaults to ~/.kube/config)
 export KUBECONFIG=/path/to/your/kubeconfig
@@ -263,11 +385,21 @@ echo "KUBECONFIG: $KUBECONFIG"
 
 3. **Run Zero with online investigation prompt**:
 
+**For ClickHouse backend:**
 ```bash
 # Run agent against live environment
 # Zero will automatically start the ClickHouse and Kubernetes MCP servers
 uv run python -m zero --workspace ./outputs/agent_outputs/23/1 \
     --prompt-file ./zero/zero-config/prompts/react_online.md \
+    -- exec --full-auto -m "gemini-2.5-pro" "Begin investigation"
+```
+
+**For Instana backend:**
+```bash
+# Run agent against live environment
+# Zero will automatically start the Instana and Kubernetes MCP servers
+uv run python -m zero --workspace ./outputs/agent_outputs/23/1 \
+    --prompt-file ./zero/zero-config/prompts/react_online_instana.md \
     -- exec --full-auto -m "gemini-2.5-pro" "Begin investigation"
 ```
 

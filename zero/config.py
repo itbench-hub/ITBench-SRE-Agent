@@ -341,6 +341,8 @@ def _substitute_env_vars(content: str) -> str:
         "CLICKHOUSE_SECURE": "false",  # Use HTTP by default
         "CLICKHOUSE_VERIFY": "true",  # Verify SSL certificates
         "KUBECONFIG": "",  # Empty means MCP will use default ~/.kube/config
+        "INSTANA_BASE_URL": "",  # Instana instance URL
+        "INSTANA_API_TOKEN": "",  # Instana API token
     }
 
     def replace_env_var(match):

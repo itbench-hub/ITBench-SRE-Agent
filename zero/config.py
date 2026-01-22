@@ -333,6 +333,7 @@ def _substitute_env_vars(content: str) -> str:
     """
     # Default values for common environment variables
     defaults = {
+        "CONTAINER_RUNTIME": "podman",  # Container runtime: podman or docker
         "CLICKHOUSE_HOST": "localhost",
         "CLICKHOUSE_PORT": "8123",
         "CLICKHOUSE_USER": "default",

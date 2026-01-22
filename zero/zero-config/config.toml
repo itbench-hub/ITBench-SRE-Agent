@@ -27,9 +27,9 @@ PYTHONPATH = "python"
 # ClickHouse MCP Server (Official Python mcp-clickhouse via Docker)
 # Running in Docker container to avoid dependency conflicts with litellm[proxy]
 # Supports PROXY_PATH for ClickHouse servers behind reverse proxies
-# NOTE: Image must be pre-pulled: podman pull docker.io/mcp/clickhouse:latest
+# NOTE: Image must be pre-pulled: docker/podman pull docker.io/mcp/clickhouse:latest
 [mcp_servers.clickhouse]
-command = "podman"
+command = "${CONTAINER_RUNTIME}"
 args = [
     "run", "--rm", "-i",
     "-e", "CLICKHOUSE_HOST=${CLICKHOUSE_HOST}",
@@ -76,9 +76,9 @@ NO_COLOR = "1"
 # Build instructions:
 #   git submodule update --init --recursive
 #   cd sre_tools/instana_mcp/mcp-instana
-#   podman build -t mcp-instana:latest .
+#   ${CONTAINER_RUNTIME} build -t mcp-instana:latest .
 [mcp_servers.instana]
-command = "podman"
+command = "${CONTAINER_RUNTIME}"
 args = [
     "run", "--rm", "-i",
     "-e", "INSTANA_BASE_URL=${INSTANA_BASE_URL}",

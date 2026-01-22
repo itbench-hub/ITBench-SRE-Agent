@@ -77,10 +77,12 @@ The SRE Tools module provides specialized MCP (Model Context Protocol) tools for
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip
 - [Node.js and npm](https://nodejs.org/) (required to install Codex CLI)
 - [Codex CLI](https://github.com/openai/codex) installed (`npm install -g @openai/codex`)
-- **[Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/)** (required for ClickHouse MCP server)
+- **[Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/)** (required for ClickHouse and Instana MCP servers)
 - API keys for your model provider (OpenRouter, Azure, etc.)
 
 > **Note:** The ClickHouse and Instana MCP servers run via Podman/Docker containers. We use the official [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) and [mcp-instana](https://github.com/instana/mcp-instana) Docker images instead of Python packages to avoid dependency conflicts with `litellm[proxy]` (which requires `rich==13.7.1`, incompatible with mcp-instana's `rich>=13.9.4`).
+
+> **Container Runtime:** By default, the framework uses Podman. If you're using Docker instead, set `export CONTAINER_RUNTIME=docker` in your `.env` file (see [Environment Variables](#environment-variables) section below).
 
 ### Installation
 
@@ -127,6 +129,7 @@ source .env
 ```
 
 The template includes configuration for:
+- **Container Runtime**: Choose between `podman` (default) or `docker` for MCP servers
 - **Model Provider API Keys**: OpenRouter (primary), with optional OpenAI and WatsonX
 - **ClickHouse MCP Server**: Database connection for retrieving logs, metrics, traces and Kubernetes events
 - **Kubernetes MCP Server**: Kubeconfig path for kubectl operations
@@ -253,7 +256,9 @@ podman images | grep -E "mcp/clickhouse|mcp-instana"
 # (or: docker images | grep -E "mcp/clickhouse|mcp-instana")
 ```
 
-> **Note:** Examples use Podman (recommended). If using Docker instead, replace `podman` with `docker` in all commands, or create an alias: `alias docker=podman`
+> **Note:** Examples use Podman (recommended). If using Docker instead, you have two options:
+> 1. **Preferred**: Set `export CONTAINER_RUNTIME=docker` in your `.env` file - the framework will automatically use Docker for MCP servers
+> 2. **Manual**: Replace `podman` with `docker` in all commands above, or create an alias: `alias podman=docker`
 
 #### How Zero Manages MCP Servers
 

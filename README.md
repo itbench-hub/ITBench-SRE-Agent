@@ -398,7 +398,7 @@ uv run python -m zero --workspace ./outputs/agent_outputs/23/1 \
 ```bash
 # Run agent against live environment
 # Zero will automatically start the Instana and Kubernetes MCP servers
-uv run python -m zero --workspace ./outputs/agent_outputs/23/1 \
+uv run python -m zero --workspace ./outputs/agent_outputs/instana_outputs/1 \
     --prompt-file ./zero/zero-config/prompts/react_online_instana.md \
     -- exec --full-auto -m "gemini-2.5-pro" "Begin investigation"
 ```

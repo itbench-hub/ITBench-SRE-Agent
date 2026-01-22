@@ -1,0 +1,36 @@
+{
+  "remediation_plan": [
+    {
+      "action": "Disable cartFailure in flagd-config ConfigMap",
+      "priority": "high",
+      "rationale": "The cartFailure flag was enabled, causing the cart service and its upstream dependencies (checkout, frontend) to fail.",
+      "steps": [
+        "kubectl patch configmap flagd-config -n otel-demo --type merge -p '{\"data\": {\"demo.flagd.json\": \"{\\\"flags\\\": {\\\"cartFailure\\\": {\\\"state\\\": \\\"OFF\\\", \\\"variants\\\": {\\\"on\\\": true, \\\"off\\\": false}, \\\"defaultVariant\\\": \\\"off\\\"}}}\"}}'"
+      ],
+      "verification": "Verify that the cart service RequestErrorRate alert clears and logs show successful transactions."
+    },
+    {
+      "action": "Investigate and resolve flagd performance/latency issues",
+      "priority": "high",
+      "rationale": "Flagd experienced DEADLINE_EXCEEDED errors and high latencies, contributing to timeouts in the frontend-proxy.",
+      "steps": [
+        "Check flagd pod resources (CPU/Memory usage): kubectl top pod -n otel-demo -l app.kubernetes.io/name=flagd",
+        "Inspect flagd logs for error patterns or bottlenecks: kubectl logs -n otel-demo -l app.kubernetes.io/name=flagd",
+        "If resources are saturated, increase CPU/Memory limits: kubectl patch deployment flagd -n otel-demo --patch '{\"spec\": {\"template\": {\"spec\": {\"containers\": [{\"name\": \"flagd\", \"resources\": {\"limits\": {\"cpu\": \"500m\", \"memory\": \"512Mi\"}}}]}}}}'"
+      ],
+      "verification": "Confirm flagd logs no longer show StatusCode.DEADLINE_EXCEEDED and frontend-proxy 504 timeouts resolve."
+    },
+    {
+      "action": "Implement circuit breaking/fallbacks for flagd communication",
+      "priority": "medium",
+      "rationale": "Service failures propagated quickly because of a lack of resilience when the feature flag provider (flagd) or downstream services failed.",
+      "steps": [
+        "Review and update cart service client timeouts for flagd communication.",
+        "Implement a local cache or default-safe fallback in services using flagd to handle provider unavailability."
+      ],
+      "verification": "Simulate flagd unavailability and ensure services remain operational with default flagged values."
+    }
+  ],
+  "estimated_time": "30-45 minutes",
+  "risk_assessment": "Low risk for ConfigMap update. Medium risk for scaling flagd deployment due to potential pod restarts."
+}

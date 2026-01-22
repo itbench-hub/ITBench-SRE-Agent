@@ -37,6 +37,7 @@ EVAL_CRITERIA = [
     "ROOT_CAUSE_REASONING_PARTIAL",
     "ROOT_CAUSE_PROXIMITY",
     "ROOT_CAUSE_PROXIMITY_FP",
+    "REMEDIATION_PLAN",
 ]
 
 # Default k values for which to compute entity@k metrics
@@ -240,22 +241,24 @@ class LAAJAgent:
 
         return prompts.LAAJ_SYSTEM_PROMPT.format(
             semantic_grouping=semantic_grouping,
-            root_cause_entity=eval_prompts["ROOT_CAUSE_ENTITY"],
-            root_cause_entity_k=eval_prompts["ROOT_CAUSE_ENTITY_K"],
-            root_cause_reasoning=eval_prompts["ROOT_CAUSE_REASONING"],
-            propagation_chain=eval_prompts["PROPAGATION_CHAIN"],
-            fault_localization=eval_prompts["FAULT_LOCALIZATION"],
-            root_cause_reasoning_partial=eval_prompts["ROOT_CAUSE_REASONING_PARTIAL"],
-            root_cause_proximity=eval_prompts["ROOT_CAUSE_PROXIMITY"],
-            root_cause_proximity_fp=eval_prompts["ROOT_CAUSE_PROXIMITY_FP"],
-            root_cause_entity_output_format=eval_output_formats["ROOT_CAUSE_ENTITY"],
-            root_cause_entity_k_output_format=eval_output_formats["ROOT_CAUSE_ENTITY_K"],
-            root_cause_reasoning_output_format=eval_output_formats["ROOT_CAUSE_REASONING"],
-            propagation_chain_output_format=eval_output_formats["PROPAGATION_CHAIN"],
-            fault_localization_output_format=eval_output_formats["FAULT_LOCALIZATION"],
-            root_cause_reasoning_partial_output_format=eval_output_formats["ROOT_CAUSE_REASONING_PARTIAL"],
-            root_cause_proximity_output_format=eval_output_formats["ROOT_CAUSE_PROXIMITY"],
-            root_cause_proximity_fp_output_format=eval_output_formats["ROOT_CAUSE_PROXIMITY_FP"],
+            root_cause_entity=eval_prompts.get("ROOT_CAUSE_ENTITY", ""),
+            root_cause_entity_k=eval_prompts.get("ROOT_CAUSE_ENTITY_K", ""),
+            root_cause_reasoning=eval_prompts.get("ROOT_CAUSE_REASONING", ""),
+            propagation_chain=eval_prompts.get("PROPAGATION_CHAIN", ""),
+            fault_localization=eval_prompts.get("FAULT_LOCALIZATION", ""),
+            root_cause_reasoning_partial=eval_prompts.get("ROOT_CAUSE_REASONING_PARTIAL", ""),
+            root_cause_proximity=eval_prompts.get("ROOT_CAUSE_PROXIMITY", ""),
+            root_cause_proximity_fp=eval_prompts.get("ROOT_CAUSE_PROXIMITY_FP", ""),
+            remediation_plan=eval_prompts.get("REMEDIATION_PLAN", ""),
+            root_cause_entity_output_format=eval_output_formats.get("ROOT_CAUSE_ENTITY", ""),
+            root_cause_entity_k_output_format=eval_output_formats.get("ROOT_CAUSE_ENTITY_K", ""),
+            root_cause_reasoning_output_format=eval_output_formats.get("ROOT_CAUSE_REASONING", ""),
+            propagation_chain_output_format=eval_output_formats.get("PROPAGATION_CHAIN", ""),
+            fault_localization_output_format=eval_output_formats.get("FAULT_LOCALIZATION", ""),
+            root_cause_reasoning_partial_output_format=eval_output_formats.get("ROOT_CAUSE_REASONING_PARTIAL", ""),
+            root_cause_proximity_output_format=eval_output_formats.get("ROOT_CAUSE_PROXIMITY", ""),
+            root_cause_proximity_fp_output_format=eval_output_formats.get("ROOT_CAUSE_PROXIMITY_FP", ""),
+            remediation_plan_output_format=eval_output_formats.get("REMEDIATION_PLAN", ""),
         )
 
     def _build_user_prompt(

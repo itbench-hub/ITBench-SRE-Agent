@@ -102,6 +102,7 @@ Each file defines prompts for one evaluation criterion:
 - `fault_localization.py`: FAULT_LOCALIZATION
 - `reasoning_partial.py`: ROOT_CAUSE_REASONING_PARTIAL
 - `proximity.py` / `proximity_fp.py`: ROOT_CAUSE_PROXIMITY variants
+- `remediation_plan.py`: REMEDIATION_PLAN (adequacy of remediation actions)
 
 ### `client.py` - LLM Client
 
@@ -280,6 +281,7 @@ This is tracked via the `matched_to` field in `predicted_entities`.
 | `fault_localization_component_identification` | Component-level identification score |
 | `root_cause_reasoning_partial` | Partial credit for reasoning |
 | `root_cause_proximity_*` | Distance-based scoring variants |
+| `remediation_plan` | Score (0.0-1.0): how well does the remediation plan address ground truth recommended actions? |
 
 ## Design Decisions
 

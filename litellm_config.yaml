@@ -15,10 +15,20 @@ model_list:
     litellm_params:
       model: openrouter/google/gemini-3-pro-preview
       api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: gemini-3-flash-preview
+    litellm_params:
+      model: openrouter/google/gemini-3-flash-preview
+      api_key: os.environ/OPENROUTER_API_KEY
   - model_name: gemini-2.5-pro
     litellm_params:
       model: openrouter/google/gemini-2.5-pro
       api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: mistral-large-2512
+    litellm_params:
+      base_url: os.environ/WATSONX_URL
+      model: watsonx/mistral-large-2512
+      api_key: os.environ/WATSONX_API_KEY
+      project_id: os.environ/WATSONX_PROJECT_ID
 
 litellm_settings:
   drop_params: true

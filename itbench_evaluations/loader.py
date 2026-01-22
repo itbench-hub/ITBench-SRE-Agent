@@ -238,6 +238,39 @@ async def load_agent_outputs(
                         else:
                             output_data = json.loads(output_data)
 
+                    # Load remediation plan if it exists
+                    remediation_candidates = [
+                        trial_dir / "outputs" / "agent_remediation.json",
+                        trial_dir / "agent_remediation.json",
+                    ]
+
+                    for rem_file in remediation_candidates:
+                        if rem_file.exists():
+                            try:
+                                with open(rem_file) as rf:
+                                    rem_content = rf.read()
+                                
+                                rem_data = None
+                                try:
+                                    rem_data = json.loads(rem_content)
+                                except json.JSONDecodeError:
+                                    # Try to clean markdown if present
+                                    if "```json" in rem_content:
+                                        rem_clean = rem_content.split("```json")[1].split("```")[0].strip()
+                                        try:
+                                            rem_data = json.loads(rem_clean)
+                                        except:
+                                            rem_data = simple_json_repair(rem_content)
+                                    else:
+                                        rem_data = simple_json_repair(rem_content)
+                                
+                                if rem_data:
+                                    output_data["remediation_plan"] = rem_data
+                                    logger.debug(f"Loaded remediation plan from {rem_file}")
+                                    break
+                            except Exception as e:
+                                logger.warning(f"Failed to load remediation plan from {rem_file}: {e}")
+
                     outputs.append(
                         {
                             "trial": int(trial_dir.name),

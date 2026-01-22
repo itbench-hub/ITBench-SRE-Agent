@@ -1,0 +1,72 @@
+{
+  "entities": [
+    {
+      "name": "otel-demo/ConfigMap/flagd-config",
+      "contributing_factor": true,
+      "reasoning": "ConfigMap modified to enable cartFailure, root cause of the service errors.",
+      "evidence": "Updated at 17:46:18Z, setting cartFailure to on."
+    },
+    {
+      "name": "otel-demo/Deployment/flagd",
+      "contributing_factor": true,
+      "reasoning": "Early performance issues in flagd contributed to higher request latencies.",
+      "evidence": "StatusCode.DEADLINE_EXCEEDED for flagd starting at 17:24Z."
+    },
+    {
+      "name": "otel-demo/Deployment/cart",
+      "contributing_factor": false,
+      "reasoning": "Cart service failed due to the cartFailure flag update.",
+      "evidence": "RequestErrorRate alert for cart service."
+    },
+    {
+      "name": "otel-demo/Deployment/checkout",
+      "contributing_factor": false,
+      "reasoning": "Checkout service inherited failures from the downstream cart service.",
+      "evidence": "RequestErrorRate alert for checkout service."
+    },
+    {
+      "name": "otel-demo/Deployment/frontend",
+      "contributing_factor": false,
+      "reasoning": "Frontend service inherited failures from downstream cart/checkout.",
+      "evidence": "RequestErrorRate alert for frontend."
+    },
+    {
+      "name": "otel-demo/Deployment/frontend-proxy",
+      "contributing_factor": false,
+      "reasoning": "Experienced 504 timeouts due to flagd/service-level latency.",
+      "evidence": "Logs showing 504 UT response_timeout."
+    }
+  ],
+  "propagations": [
+    {
+      "source": "otel-demo/ConfigMap/flagd-config",
+      "target": "otel-demo/Deployment/cart",
+      "condition": "cartFailure flag enabled",
+      "effect": "cart service returns errors"
+    },
+    {
+      "source": "otel-demo/Deployment/cart",
+      "target": "otel-demo/Deployment/checkout",
+      "condition": "cart returns errors",
+      "effect": "checkout service fails"
+    },
+    {
+      "source": "otel-demo/Deployment/checkout",
+      "target": "otel-demo/Deployment/frontend",
+      "condition": "checkout fails",
+      "effect": "frontend returns error"
+    }
+  ],
+  "alerts_explained": [
+    {
+      "alert": "RequestErrorRate",
+      "explanation": "Caused by flagd failure injection and communication issues.",
+      "explained": true
+    },
+    {
+      "alert": "Watchdog",
+      "explanation": "Prometheus heartbeat alert.",
+      "explained": true
+    }
+  ]
+}

@@ -87,6 +87,8 @@ Zero MUST support the following minimal set of wrapper flags:
   - Expected output file name (exec mode only). Zero auto-retries if this file is not created.
 - `--max-retries N` (optional, default `5`)
   - Maximum retry attempts if output file is not created (exec mode only).
+- `--remediation-file NAME` (optional, default `agent_remediation.json`)
+  - Remediation plan output file name (exec mode only). Generated automatically after diagnosis completes.
 
 All other behavior (model selection, profile, approval policy, sandbox mode, MCP enablement, etc.) MUST be provided by Codex args/config and therefore forwarded.
 
@@ -158,6 +160,26 @@ In `exec` mode, Zero implements automatic retry logic when the expected output f
 #### Rationale
 Agent runs may be interrupted or fail to complete the final output step. The `resume --last` feature in Codex allows continuing from the last state, which is more efficient than restarting from scratch.
 
+---
+
+### Automatic remediation plan generation (exec mode)
+
+After a successful diagnosis completes in `exec` mode, Zero automatically generates a remediation plan.
+
+#### Behavior
+1. After Codex exits successfully (exit code 0) and the diagnosis file exists, Zero reads the diagnosis.
+2. Zero invokes Codex again with a prompt to generate a remediation plan based on the diagnosis.
+3. The remediation plan is written to `--remediation-file` (default: `agent_remediation.json`).
+4. The remediation plan includes:
+   - List of recommended actions with priorities
+   - Specific steps for each action
+   - Rationale for each action
+   - Verification steps
+   - Estimated time and risk assessment
+
+#### Rationale
+A diagnosis alone is not sufficient for incident response. The remediation plan provides actionable steps that operators can follow to resolve the identified issues.
+
 #### Example
 ```bash
 # Auto-retries up to 5 times if agent_output.json not created
@@ -185,6 +207,7 @@ Given `--workspace W`, Zero MUST ensure these paths exist:
 - `W/policy/` (copied from `zero-config/policy/`)
 - `W/traces/` (for trace artifacts)
 - `W/agent_output.json` (created by agent based on prompt instructions)
+- `W/agent_remediation.json` (created automatically after diagnosis completes)
 
 Zero MUST NOT preserve state between runs - each run copies fresh config files.
 

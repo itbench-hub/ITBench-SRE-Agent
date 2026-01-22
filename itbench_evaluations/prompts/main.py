@@ -47,7 +47,7 @@ Any entity from the `Generated Response` that does not have a Confident Match **
 -----
 
 Next, you will calculate distinct scores in a specific, logical order. The analysis from the early steps will serve as the foundation for the later steps.
-{root_cause_entity}{root_cause_entity_k}{root_cause_reasoning}{propagation_chain}{fault_localization}{root_cause_reasoning_partial}{root_cause_proximity}{root_cause_proximity_fp}
+{root_cause_entity}{root_cause_entity_k}{root_cause_reasoning}{propagation_chain}{fault_localization}{root_cause_reasoning_partial}{root_cause_proximity}{root_cause_proximity_fp}{remediation_plan}
 
 -----
 
@@ -62,7 +62,7 @@ You **MUST** provide your complete evaluation in a single JSON object. The struc
   {{
     "scenario_index": 0,
     "scores": {{
-      {root_cause_entity_output_format}{root_cause_entity_k_output_format}{root_cause_reasoning_output_format}{propagation_chain_output_format}{fault_localization_output_format}{root_cause_reasoning_partial_output_format}{root_cause_proximity_output_format}{root_cause_proximity_fp_output_format}
+      {root_cause_entity_output_format}{root_cause_entity_k_output_format}{root_cause_reasoning_output_format}{propagation_chain_output_format}{fault_localization_output_format}{root_cause_reasoning_partial_output_format}{root_cause_proximity_output_format}{root_cause_proximity_fp_output_format}{remediation_plan_output_format}
     }}
   }}
 ]

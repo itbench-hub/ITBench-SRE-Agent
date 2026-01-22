@@ -44,6 +44,10 @@ from .reasoning_partial import (
     ROOT_CAUSE_REASONING_PARTIAL_OUTPUT_FORMAT,
     ROOT_CAUSE_REASONING_PARTIAL_PROMPT,
 )
+from .remediation_plan import (
+    REMEDIATION_PLAN_OUTPUT_FORMAT,
+    REMEDIATION_PLAN_PROMPT,
+)
 from .semantic_grouping import (
     NO_SEMANTIC_GROUPING_PROMPT,
     SEMANTIC_GROUPING_PROMPT,
@@ -81,6 +85,9 @@ __all__ = [
     # Proximity with FP
     "ROOT_CAUSE_PROXIMITY_FP_OUTPUT_FORMAT",
     "ROOT_CAUSE_PROXIMITY_FP_PROMPT",
+    # Remediation plan
+    "REMEDIATION_PLAN_OUTPUT_FORMAT",
+    "REMEDIATION_PLAN_PROMPT",
     # Semantic grouping
     "SEMANTIC_GROUPING_PROMPT",
     "NO_SEMANTIC_GROUPING_PROMPT",

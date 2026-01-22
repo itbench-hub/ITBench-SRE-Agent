@@ -1,0 +1,44 @@
+# Zero Configuration
+# This file is copied to workspace/config.toml when running Zero
+
+profile = "sre_support_engineer"
+
+[profiles.sre_support_engineer]
+model_provider = "litellm"
+model_reasoning_effort = "low"
+sandbox_mode = "workspace-write"
+approval_policy = "never"
+
+[profiles.sre_support_engineer.sandbox_workspace_write]
+writable_roots = [
+    "/Users/noahz/Documents/ITBench-SRE-Agent/agent_outputs/2/1",
+]
+network_access = false
+
+# ============================================================================
+# MCP Servers
+# ============================================================================
+
+[mcp_servers.offline_incident_analysis]
+command = "python"
+args = ["-m", "sre_tools.offline_incident_analysis"]
+
+[mcp_servers.offline_incident_analysis.env]
+PYTHONPATH = "python"
+
+# ============================================================================
+# Model Provider - Local LiteLLM Proxy
+# ============================================================================
+# LiteLLM routes to OpenRouter (o3-mini, claude, gemini, etc.)
+# Run: uv run litellm --config config.yaml
+
+[model_providers.litellm]
+name = "LiteLLM Proxy"
+base_url = "http://localhost:4000"
+# env_key = "DUMMY_KEY_NEED_NOT_BE_UPDATED"
+wire_api = "chat"
+max_output_tokens = 16384
+
+# Zero: Mark workspace as trusted (auto-generated)
+[projects."/Users/noahz/Documents/ITBench-SRE-Agent/agent_outputs/2/1"]
+trust_level = "trusted"

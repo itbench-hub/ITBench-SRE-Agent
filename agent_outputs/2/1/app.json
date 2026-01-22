@@ -1,0 +1,11 @@
+{
+  "nodes": [
+    {
+      "id": "/",
+      "kind": "",
+      "name": "",
+      "namespace": "default"
+    }
+  ],
+  "edges": []
+}

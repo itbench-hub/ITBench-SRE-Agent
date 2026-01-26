@@ -532,6 +532,18 @@ uv run python -m zero --workspace /tmp/test --dry-run \
 
 ## Troubleshooting
 
+### "401 Unauthorized" error from chatgpt.com
+
+When running Zero, you may see this error message:
+
+```
+ERROR codex_core::models_manager::manager: failed to refresh available models: unexpected status 401 Unauthorized: {"detail":"Unauthorized"}, url: https://chatgpt.com/backend-api/codex/models?client_version=0.91.0, request id: ...
+```
+
+**This error can be safely ignored.** It occurs because Codex CLI tries to fetch available models from ChatGPT's backend for the model picker UI, but this doesn't affect agent execution when:
+1. You specify a model explicitly with `-m "model-name"`
+2. Your LiteLLM proxy is running and configured correctly
+
 ### Agent produces no output
 
 1. Check `traces/stdout.log` for errors

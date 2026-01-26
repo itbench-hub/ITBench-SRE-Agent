@@ -257,6 +257,8 @@ pip install tomli
 2. Check Codex is in PATH: `which codex`
 3. Verify API key: `echo $OPENAI_API_KEY`
 
+**Note:** If you see `401 Unauthorized` errors from `https://chatgpt.com/backend-api/codex/models`, these can be safely ignored. Codex tries to refresh its model catalog but this doesn't affect agent execution when using LiteLLM proxy with explicit model names. The agent will continue running normally.
+
 ### MCP tools not loading in Codex
 
 **Zero handles MCP configuration automatically.** When you run `zero`, it:

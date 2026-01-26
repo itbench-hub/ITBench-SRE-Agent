@@ -18,7 +18,7 @@
 git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
 cd ITBench-SRE-Agent
 
-# If you already cloned without --recurse-submodules, initialize submodules:
+# Or if already cloned, initialize submodules:
 # git submodule update --init --recursive
 
 # Install with uv

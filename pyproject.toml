@@ -37,7 +37,7 @@ itbench-eval = "itbench_evaluations.__main__:main"
 zero = "zero.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["zero", "sre_tools", "itbench_evaluations"]
+packages = ["zero", "sre_tools", "ITBench-Evaluations/itbench_evaluations"]
 
 [tool.hatch.metadata]
 allow-direct-references = true

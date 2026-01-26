@@ -34,7 +34,7 @@ A modular framework for evaluating LLM agents on Site Reliability Engineering (S
 | Module | Description | Documentation |
 |--------|-------------|---------------|
 | **[Zero](./zero/)** | Thin wrapper around [Codex CLI](https://github.com/openai/codex) for running SRE agents | [zero/zero-config/README.md](./zero/zero-config/README.md) |
-| **[ITBench Evaluations](./itbench_evaluations/)** | LLM-as-a-Judge evaluator for agent outputs | `itbench_evaluations/` |
+| **[ITBench Evaluations](./ITBench-Evaluations/)** | LLM-as-a-Judge evaluator for agent outputs (git submodule) | [itbench-hub/ITBench-Evaluations](https://github.com/itbench-hub/ITBench-Evaluations) |
 | **[SRE Tools](./sre_tools/)** | MCP server with SRE diagnostic tools | [sre_tools/README.md](./sre_tools/README.md) |
 
 ### SRE Tools Overview
@@ -91,7 +91,7 @@ The SRE Tools module provides specialized MCP (Model Context Protocol) tools for
 git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
 cd ITBench-SRE-Agent
 
-# If you already cloned without --recurse-submodules, initialize submodules:
+# Or if already cloned, initialize submodules:
 # git submodule update --init --recursive
 
 # Install dependencies

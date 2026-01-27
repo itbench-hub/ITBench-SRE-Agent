@@ -1,0 +1,3 @@
+[submodule "sre_tools/instana_mcp/mcp-instana"]
+	path = sre_tools/instana_mcp/mcp-instana
+	url = https://github.com/instana/mcp-instana.git

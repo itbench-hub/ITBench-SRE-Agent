@@ -1,7 +1,7 @@
 ---
 mcp_servers:
   - offline_incident_analysis
-  - clickhouse
+  - instana
   - kubernetes
 ---
 
@@ -9,7 +9,7 @@ mcp_servers:
 # DATA LOCATION REFERENCE
 ====================================================================
 
-{{include: data_sources/clickhouse.md}}
+{{include: data_sources/instana.md}}
 
 {{include: data_sources/kubernetes.md}}
 

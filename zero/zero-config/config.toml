@@ -27,9 +27,9 @@ PYTHONPATH = "python"
 # ClickHouse MCP Server (Official Python mcp-clickhouse via Docker)
 # Running in Docker container to avoid dependency conflicts with litellm[proxy]
 # Supports PROXY_PATH for ClickHouse servers behind reverse proxies
-# NOTE: Image must be pre-pulled: podman pull docker.io/mcp/clickhouse:latest
+# NOTE: Image must be pre-pulled: docker/podman pull docker.io/mcp/clickhouse:latest
 [mcp_servers.clickhouse]
-command = "podman"
+command = "${CONTAINER_RUNTIME}"
 args = [
     "run", "--rm", "-i",
     "-e", "CLICKHOUSE_HOST=${CLICKHOUSE_HOST}",
@@ -68,6 +68,30 @@ NO_COLOR = "1"
 # Note: Kubernetes MCP inherits KUBECONFIG from environment
 # Set KUBECONFIG in your .env file or it defaults to ~/.kube/config
 
+# Instana MCP Server (Docker-based from instana/mcp-instana)
+# Running in Docker container to avoid dependency conflicts with litellm[proxy]
+# Provides observability and APM data for SRE investigations
+# IMPORTANT: Image must be built locally (no pre-built image available)
+# Repository included as submodule at: sre_tools/instana_mcp/mcp-instana
+# Build instructions:
+#   git submodule update --init --recursive
+#   cd sre_tools/instana_mcp/mcp-instana
+#   ${CONTAINER_RUNTIME} build -t mcp-instana:latest .
+[mcp_servers.instana]
+command = "${CONTAINER_RUNTIME}"
+args = [
+    "run", "--rm", "-i",
+    "-e", "INSTANA_BASE_URL=${INSTANA_BASE_URL}",
+    "-e", "INSTANA_API_TOKEN=${INSTANA_API_TOKEN}",
+    "mcp-instana:latest",
+    "--transport", "stdio"
+]
+
+# Note: Instana credentials are substituted from environment variables
+# Set these in your .env file (see .env.tmpl):
+#   INSTANA_BASE_URL (your Instana instance URL, e.g., https://example.instana.io)
+#   INSTANA_API_TOKEN (your API token from Instana UI: Settings → API Tokens)
+
 # ============================================================================
 # Model Provider - Local LiteLLM Proxy
 # ============================================================================
@@ -80,3 +104,4 @@ base_url = "http://localhost:4000"
 # env_key = "DUMMY_KEY_NEED_NOT_BE_UPDATED"
 wire_api = "chat"
 max_output_tokens = 16384
+

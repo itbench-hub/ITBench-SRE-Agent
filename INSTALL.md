@@ -14,9 +14,12 @@
 ## Quick Install
 
 ```bash
-# Clone the repository
-git clone https://github.com/itbench-hub/ITBench-SRE-Agent.git
+# Clone the repository with submodules
+git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
 cd ITBench-SRE-Agent
+
+# If you already cloned without --recurse-submodules, initialize submodules:
+# git submodule update --init --recursive
 
 # Install with uv
 uv sync
@@ -53,7 +56,7 @@ Or follow the official instructions: https://github.com/openai/codex
 
 ## Install Podman or Docker
 
-Container runtime is required for ClickHouse MCP server:
+Container runtime is required for MCP servers (ClickHouse, Instana):
 
 ```bash
 # Podman (recommended - open source, daemonless)
@@ -73,7 +76,36 @@ podman --version && podman ps
 
 > **Note:** If using Podman, create a `docker` alias: `alias docker=podman`
 
-**Why containers?** We use container-based MCP servers ([Altinity MCP](https://github.com/Altinity/altinity-mcp) for ClickHouse) to avoid Python dependency conflicts with `litellm[proxy]`.
+**Why containers?** We use container-based MCP servers to avoid Python dependency conflicts:
+- **ClickHouse**: Official [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) - avoids `uvicorn` version conflicts
+- **Instana**: Official [mcp-instana](https://github.com/instana/mcp-instana) - avoids `rich` package conflicts (litellm needs `rich==13.7.1`, mcp-instana needs `rich>=13.9.4`)
+
+### Pull/Build MCP Server Images
+
+**ClickHouse MCP (pre-built image available):**
+```bash
+# Pull ClickHouse MCP server (for live environment metrics/logs)
+podman pull docker.io/mcp/clickhouse:latest
+# (or: docker pull docker.io/mcp/clickhouse:latest)
+```
+
+**Instana MCP (requires local build - no pre-built image):**
+```bash
+# Initialize the submodule (included in this repository)
+git submodule update --init --recursive
+
+# Build Instana MCP server (for Instana APM integration - optional)
+cd sre_tools/instana_mcp/mcp-instana
+podman build -t mcp-instana:latest .
+# (or: docker build -t mcp-instana:latest .)
+cd ../../..
+```
+
+**Verify images:**
+```bash
+podman images | grep -E "mcp/clickhouse|mcp-instana"
+# (or: docker images | grep -E "mcp/clickhouse|mcp-instana")
+```
 
 ---
 
@@ -98,6 +130,7 @@ The `.env.tmpl` template includes configuration for:
 - **Judge Configuration**: LLM-as-a-Judge evaluator settings
 - **ClickHouse MCP Server**: Database connection settings
 - **Kubernetes MCP Server**: Kubeconfig path
+- **Instana MCP Server**: Instana APM connection settings (optional)
 
 For detailed information about each variable, see the comments in [.env.tmpl](.env.tmpl).
 

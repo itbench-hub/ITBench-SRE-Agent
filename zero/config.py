@@ -333,6 +333,7 @@ def _substitute_env_vars(content: str) -> str:
     """
     # Default values for common environment variables
     defaults = {
+        "CONTAINER_RUNTIME": "podman",  # Container runtime: podman or docker
         "CLICKHOUSE_HOST": "localhost",
         "CLICKHOUSE_PORT": "8123",
         "CLICKHOUSE_USER": "default",
@@ -341,6 +342,8 @@ def _substitute_env_vars(content: str) -> str:
         "CLICKHOUSE_SECURE": "false",  # Use HTTP by default
         "CLICKHOUSE_VERIFY": "true",  # Verify SSL certificates
         "KUBECONFIG": "",  # Empty means MCP will use default ~/.kube/config
+        "INSTANA_BASE_URL": "",  # Instana instance URL
+        "INSTANA_API_TOKEN": "",  # Instana API token
     }
 
     def replace_env_var(match):

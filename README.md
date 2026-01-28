@@ -34,7 +34,7 @@ A modular framework for evaluating LLM agents on Site Reliability Engineering (S
 | Module | Description | Documentation |
 |--------|-------------|---------------|
 | **[Zero](./zero/)** | Thin wrapper around [Codex CLI](https://github.com/openai/codex) for running SRE agents | [zero/zero-config/README.md](./zero/zero-config/README.md) |
-| **[ITBench Evaluations](./itbench_evaluations/)** | LLM-as-a-Judge evaluator for agent outputs | `itbench_evaluations/` |
+| **[ITBench Evaluations](./ITBench-Evaluations/)** | LLM-as-a-Judge evaluator for agent outputs (git submodule) | [itbench-hub/ITBench-Evaluations](https://github.com/itbench-hub/ITBench-Evaluations) |
 | **[SRE Tools](./sre_tools/)** | MCP server with SRE diagnostic tools | [sre_tools/README.md](./sre_tools/README.md) |
 
 ### SRE Tools Overview
@@ -91,7 +91,7 @@ The SRE Tools module provides specialized MCP (Model Context Protocol) tools for
 git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
 cd ITBench-SRE-Agent
 
-# If you already cloned without --recurse-submodules, initialize submodules:
+# Or if already cloned, initialize submodules:
 # git submodule update --init --recursive
 
 # Install dependencies
@@ -531,6 +531,18 @@ uv run python -m zero --workspace /tmp/test --dry-run \
 ---
 
 ## Troubleshooting
+
+### "401 Unauthorized" error from chatgpt.com
+
+When running Zero, you may see this error message:
+
+```
+ERROR codex_core::models_manager::manager: failed to refresh available models: unexpected status 401 Unauthorized: {"detail":"Unauthorized"}, url: https://chatgpt.com/backend-api/codex/models?client_version=0.91.0, request id: ...
+```
+
+**This error can be safely ignored.** It occurs because Codex CLI tries to fetch available models from ChatGPT's backend for the model picker UI, but this doesn't affect agent execution when:
+1. You specify a model explicitly with `-m "model-name"`
+2. Your LiteLLM proxy is running and configured correctly
 
 ### Agent produces no output
 

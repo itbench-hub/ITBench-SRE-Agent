@@ -1,3 +1,6 @@
 [submodule "sre_tools/instana_mcp/mcp-instana"]
 	path = sre_tools/instana_mcp/mcp-instana
 	url = https://github.com/instana/mcp-instana.git
+[submodule "ITBench-Evaluations"]
+	path = ITBench-Evaluations
+	url = https://github.com/itbench-hub/ITBench-Evaluations.git

@@ -18,7 +18,7 @@
 git clone --recurse-submodules https://github.com/itbench-hub/ITBench-SRE-Agent.git
 cd ITBench-SRE-Agent
 
-# If you already cloned without --recurse-submodules, initialize submodules:
+# Or if already cloned, initialize submodules:
 # git submodule update --init --recursive
 
 # Install with uv
@@ -256,6 +256,8 @@ pip install tomli
 1. Ensure Node.js 22+ is installed
 2. Check Codex is in PATH: `which codex`
 3. Verify API key: `echo $OPENAI_API_KEY`
+
+**Note:** If you see `401 Unauthorized` errors from `https://chatgpt.com/backend-api/codex/models`, these can be safely ignored. Codex tries to refresh its model catalog but this doesn't affect agent execution when using LiteLLM proxy with explicit model names. The agent will continue running normally.
 
 ### MCP tools not loading in Codex
 

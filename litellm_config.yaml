@@ -2,6 +2,7 @@ model_list:
   # ==============================================================================
   # HuggingFace Models - Agent execution via HF Inference API
   # ==============================================================================
+  # IMPORTANT: Accept license at https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct
   - model_name: llama-3.3-70b
     litellm_params:
       model: huggingface/meta-llama/Llama-3.3-70B-Instruct
@@ -12,9 +13,9 @@ model_list:
       model: huggingface/Qwen/Qwen2.5-72B-Instruct
       api_key: os.environ/HF_TOKEN
 
-  - model_name: mistral-large
+  - model_name: gpt-oss-120b-hf
     litellm_params:
-      model: huggingface/mistralai/Mistral-Large-Instruct-2411
+      model: huggingface/openai/gpt-oss-120b
       api_key: os.environ/HF_TOKEN
 
   # ==============================================================================

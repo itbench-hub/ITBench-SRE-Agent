@@ -1,36 +1,65 @@
 model_list:
+  # ==============================================================================
+  # HuggingFace Models - Agent execution via HF Inference API
+  # ==============================================================================
+  - model_name: llama-3.3-70b
+    litellm_params:
+      model: huggingface/meta-llama/Llama-3.3-70B-Instruct
+      api_key: os.environ/HF_TOKEN
+
+  - model_name: qwen-2.5-72b
+    litellm_params:
+      model: huggingface/Qwen/Qwen2.5-72B-Instruct
+      api_key: os.environ/HF_TOKEN
+
+  - model_name: mistral-large
+    litellm_params:
+      model: huggingface/mistralai/Mistral-Large-Instruct-2411
+      api_key: os.environ/HF_TOKEN
+
+  # ==============================================================================
+  # OpenRouter Models - Original configuration
+  # ==============================================================================
   - model_name: gpt-5.2
     litellm_params:
       model: openrouter/openai/gpt-5.2
       api_key: os.environ/OPENROUTER_API_KEY
+
   - model_name: gpt-5.2-direct
     litellm_params:
       model: openai/gpt-5.2-2025-12-11
       api_key: os.environ/OPENAI_API_KEY
+
   - model_name: claude-4-5-opus-latest
     litellm_params:
       model: openrouter/anthropic/claude-opus-4.5
       api_key: os.environ/OPENROUTER_API_KEY
+
   - model_name: gemini-3-pro-preview
     litellm_params:
       model: openrouter/google/gemini-3-pro-preview
       api_key: os.environ/OPENROUTER_API_KEY
+
   - model_name: gemini-2.5-pro
     litellm_params:
       model: openrouter/google/gemini-2.5-pro
       api_key: os.environ/OPENROUTER_API_KEY
+
   - model_name: gemini-3-flash-preview
     litellm_params:
       model: openrouter/google/gemini-3-flash-preview
       api_key: os.environ/OPENROUTER_API_KEY
+
   - model_name: gpt-oss-120b
     litellm_params:
       model: openrouter/openai/gpt-oss-120b
       api_key: os.environ/OPENROUTER_API_KEY
+
   - model_name: kimi-k2-thinking
     litellm_params:
       model: openrouter/moonshotai/kimi-k2-thinking
       api_key: os.environ/OPENROUTER_API_KEY
+
   - model_name: gpt-oss-120b-on-watsonx
     litellm_params:
       base_url: os.environ/IBMCLOUD_WATSONX_BASE_URL

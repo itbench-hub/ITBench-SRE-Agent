@@ -29,6 +29,7 @@ def run_codex(
     verbose: bool = False,
     output_file: str = "agent_output.json",
     max_retries: int = 5,
+    remediation_file: str = "agent_remediation.json",
 ) -> int:
     """Run Codex with the workspace configuration.
 
@@ -42,6 +43,7 @@ def run_codex(
         verbose: Enable verbose output
         output_file: Expected output file name (exec mode only)
         max_retries: Max retries if output file not created (exec mode only)
+        remediation_file: Remediation plan output file name (exec mode only)
 
     Returns:
         Exit code from Codex
@@ -102,7 +104,7 @@ def run_codex(
 
     # Run Codex (with retry logic for exec mode)
     try:
-        return _run_with_retry(
+        exit_code = _run_with_retry(
             codex_args=codex_args,
             env=env,
             cwd=cwd,
@@ -112,6 +114,26 @@ def run_codex(
             output_file_path=output_file_path,
             max_retries=max_retries,
         )
+        
+        # Generate remediation plan if diagnosis was successful and output file exists
+        if is_exec_mode and exit_code == 0 and output_file_path.exists():
+            remediation_file_path = workspace_paths.workspace_dir / remediation_file
+            try:
+                _generate_remediation_plan(
+                    diagnosis_file=output_file_path,
+                    remediation_file=remediation_file_path,
+                    workspace_paths=workspace_paths,
+                    codex_args=codex_args,
+                    env=env,
+                    verbose=verbose,
+                )
+            except Exception as e:
+                print(f"Warning: Failed to generate remediation plan: {e}", file=sys.stderr)
+                if verbose:
+                    import traceback
+                    traceback.print_exc()
+        
+        return exit_code
     finally:
         if collector:
             collector.stop()
@@ -347,6 +369,155 @@ def _build_environment(workspace_paths: ZeroWorkspacePaths) -> dict[str, str]:
     return env
 
 
+def _generate_remediation_plan(
+    *,
+    diagnosis_file: Path,
+    remediation_file: Path,
+    workspace_paths: ZeroWorkspacePaths,
+    codex_args: list[str],
+    env: dict[str, str],
+    verbose: bool,
+) -> None:
+    """Generate a remediation plan based on the diagnosis.
+
+    Reads the diagnosis from agent_output.json and uses Codex to generate
+    a remediation plan with recommended actions using the remediation_plan.md prompt.
+
+    Args:
+        diagnosis_file: Path to the diagnosis JSON file
+        remediation_file: Path to write the remediation plan
+        workspace_paths: Workspace paths
+        codex_args: Original Codex arguments (to extract model/profile)
+        env: Environment variables
+        verbose: Enable verbose output
+    """
+    from .config import BUNDLED_CONFIG_DIR
+
+    if verbose:
+        print(f"\n{'=' * 60}")
+        print("Generating remediation plan...")
+        print(f"Diagnosis file: {diagnosis_file}")
+        print(f"Remediation file: {remediation_file}")
+        print(f"{'=' * 60}\n")
+
+    # Load the remediation prompt template
+    remediation_prompt_file = BUNDLED_CONFIG_DIR / "prompts" / "remediation_plan.md"
+    if not remediation_prompt_file.exists():
+        raise FileNotFoundError(f"Remediation prompt template not found: {remediation_prompt_file}")
+
+    prompt_content = remediation_prompt_file.read_text()
+
+    # Substitute variables in the prompt
+    prompt_content = prompt_content.replace("$DIAGNOSIS_FILE", diagnosis_file.name)
+    prompt_content = prompt_content.replace("$REMEDIATION_FILE", remediation_file.name)
+    prompt_content = prompt_content.replace("$WORKSPACE_DIR", str(workspace_paths.workspace_dir))
+
+    if verbose:
+        print(f"Remediation prompt prepared ({len(prompt_content)} chars)")
+
+    # Temporarily replace AGENTS.md with remediation prompt
+    # Codex automatically reads AGENTS.md for project instructions
+    agents_md_path = workspace_paths.workspace_dir / "AGENTS.md"
+    original_agents_content = None
+    if agents_md_path.exists():
+        original_agents_content = agents_md_path.read_text()
+    
+    try:
+        # Write remediation prompt to AGENTS.md (for reference/context)
+        agents_md_path.write_text(prompt_content)
+        
+        if verbose:
+            print(f"[DEBUG] Wrote remediation prompt to: {agents_md_path}")
+            print(f"[DEBUG] Diagnosis file: {diagnosis_file}")
+            print(f"[DEBUG] Expected remediation file: {remediation_file}")
+            print(f"[DEBUG] Working directory: {workspace_paths.workspace_dir}")
+
+        # Build command to run Codex exec
+        # Pass prompt via stdin since Codex doesn't auto-read AGENTS.md in exec mode
+        cmd = [
+            "codex",
+            "exec",
+            "--json",
+        ]
+
+        # Add model configuration from original arguments
+        cmd.extend(_extract_model_flags(codex_args))
+
+        if verbose:
+            print(f"[DEBUG] Running command: {cmd}")
+            print(f"[DEBUG] Passing prompt via stdin ({len(prompt_content)} chars)")
+
+        # Execute Codex to generate remediation plan
+        cwd = str(workspace_paths.workspace_dir)
+        remediation_log = workspace_paths.traces_dir / "remediation_stdout.log"
+        
+        with open(remediation_log, "w") as log_file:
+            process = subprocess.Popen(
+                cmd,
+                env=env,
+                cwd=cwd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+
+            # Write prompt to stdin
+            if process.stdin:
+                process.stdin.write(prompt_content)
+                process.stdin.close()
+
+            # Stream output
+            if verbose:
+                print(f"[DEBUG] Codex process started (PID: {process.pid})")
+            
+            if process.stdout:
+                for line in process.stdout:
+                    if verbose:
+                        print(f"[CODEX] {line.rstrip()}")
+                    sys.stdout.flush()
+                    log_file.write(line)
+                    log_file.flush()
+
+            process.wait()
+            
+            if verbose:
+                print(f"[DEBUG] Codex process exited with code: {process.returncode}")
+                print(f"[DEBUG] Remediation file exists after run: {remediation_file.exists()}")
+            
+            if process.returncode != 0:
+                # Read and print the log file for debugging
+                if verbose:
+                    print(f"[DEBUG] Reading remediation log for error details...")
+                if remediation_log.exists():
+                    log_content = remediation_log.read_text()
+                    if verbose:
+                        print(f"[DEBUG] Log content (last 1000 chars):\n{log_content[-1000:]}")
+                raise RuntimeError(f"Remediation generation failed with exit code {process.returncode}")
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to execute remediation generation: {e}")
+    finally:
+        # Restore original AGENTS.md
+        if original_agents_content is not None:
+            agents_md_path.write_text(original_agents_content)
+            if verbose:
+                print(f"Restored original AGENTS.md")
+        elif agents_md_path.exists():
+            # If there was no original, remove the temporary one
+            agents_md_path.unlink()
+            if verbose:
+                print(f"Removed temporary AGENTS.md")
+
+    # Verify the remediation file was created
+    if not remediation_file.exists():
+        raise RuntimeError(f"Remediation file was not created: {remediation_file}")
+
+    if verbose:
+        print(f"\n✓ Remediation plan created: {remediation_file}")
+
+
 def _execute_codex(
     *,
     cmd: list[str],
@@ -377,11 +548,12 @@ def _execute_codex(
             )
 
             # Stream to both console and log file
-            for line in process.stdout:
-                sys.stdout.write(line)
-                sys.stdout.flush()
-                log_file.write(line)
-                log_file.flush()
+            if process.stdout:
+                for line in process.stdout:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                    log_file.write(line)
+                    log_file.flush()
 
             process.wait()
             return process.returncode
@@ -392,3 +564,24 @@ def _execute_codex(
 
         result = subprocess.run(cmd, env=env, cwd=cwd)
         return result.returncode
+
+
+def _extract_model_flags(args: list[str]) -> list[str]:
+    """Extract model/profile arguments from codex_args."""
+    flags = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        # Keep model, profile, and reasoning flags
+        if arg in ("-m", "--model", "-p", "--profile", "--provider",
+                  "--model-provider", "--model-reasoning-effort"):
+            flags.append(arg)
+            if i + 1 < len(args):
+                flags.append(args[i + 1])
+                i += 1
+        elif arg.startswith(("-m=", "--model=", "-p=", "--profile=",
+                             "--provider=", "--model-provider=",
+                             "--model-reasoning-effort=")):
+            flags.append(arg)
+        i += 1
+    return flags

@@ -104,6 +104,14 @@ Examples:
   # With trace collection
   zero --workspace /tmp/work --read-only-dir ./Scenario-1 --collect-traces -- exec "investigate"
 
+  # Custom output and remediation files
+  zero --workspace /tmp/work \\
+       --read-only-dir ./Scenario-1 \\
+       --prompt-file ./prompts/react_shell_investigation.md \\
+       --output-file diagnosis.json \\
+       --remediation-file remediation.json \\
+       -- exec -m "openai/o4-mini"
+
 Notes:
   - Everything after '--' is passed to Codex unchanged.
   - Zero sets CODEX_HOME to the workspace directory.
@@ -111,6 +119,7 @@ Notes:
   - Zero always adds '--json' when 'exec' subcommand is used.
   - Do NOT pass -C/--cd or --json to Codex; Zero controls these.
   - In exec mode with --prompt-file, auto-variables are: {snapshot_dirs}, {output_path}, {workspace_dir}
+  - After diagnosis completes, Zero automatically generates a remediation plan in the remediation file.
 """,
     )
 
@@ -189,6 +198,13 @@ Notes:
         help="Max retries if output file is not created (exec mode only). Default: 5",
     )
 
+    parser.add_argument(
+        "--remediation-file",
+        type=str,
+        default="agent_remediation.json",
+        help="Remediation plan output file name (exec mode only). Generated after diagnosis is complete. Default: agent_remediation.json",
+    )
+
     return parser.parse_args(args)
 
 
@@ -264,6 +280,7 @@ def main(argv: list[str] | None = None) -> int:
             verbose=args.verbose,
             output_file=args.output_file,
             max_retries=args.max_retries,
+            remediation_file=args.remediation_file,
         )
     except KeyboardInterrupt:
         print("\nInterrupted by user", file=sys.stderr)

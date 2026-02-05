@@ -68,6 +68,12 @@ model_list:
       api_key: os.environ/IBMCLOUD_WATSONX_API_KEY
       project_id: os.environ/IBMCLOUD_WATSONX_PROJECT_ID
 
+  - model_name: gemini-3-pro-preview-on-ete
+    litellm_params:
+      base_url: os.environ/ETE_URL
+      model: litellm_proxy/gcp/gemini-3-pro-preview
+      api_key: os.environ/ETE_API_KEY
+
 litellm_settings:
   drop_params: true
   modify_params: true

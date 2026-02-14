@@ -31,6 +31,8 @@ from mcp.types import TextContent, Tool
 
 from sre_tools.utils import format_timestamp, read_json_file, read_tsv_file, truncate_string
 
+from .builder import build_topology_standalone
+
 
 def _cli_build_topology(args) -> int:
     """CLI handler for build_topology command."""

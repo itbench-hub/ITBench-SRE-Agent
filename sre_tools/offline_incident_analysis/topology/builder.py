@@ -31,6 +31,8 @@ from mcp.types import TextContent, Tool
 
 from sre_tools.utils import format_timestamp, read_json_file, read_tsv_file, truncate_string
 
+from ..shared import _obj_id
+
 
 class _TopologyBuilder:
     """Helper class to build topology graphs with deduplication."""

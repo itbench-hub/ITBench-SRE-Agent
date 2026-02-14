@@ -31,6 +31,17 @@ from mcp.types import TextContent, Tool
 
 from sre_tools.utils import format_timestamp, read_json_file, read_tsv_file, truncate_string
 
+from ..shared import (
+    _build_k8_object_filter_mask,
+    _effective_update_timestamp,
+    _format_k8s_timestamp,
+    _parse_k8_object_identifier,
+    _parse_k8s_body_json,
+    _parse_k8s_timestamp,
+    _parse_time,
+    _to_utc_timestamp,
+)
+
 
 def _clean_spec_for_diff(obj: Any, path: str = "") -> Any:
     """Recursively clean a spec object, removing fields that cause churn."""

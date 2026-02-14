@@ -31,6 +31,8 @@ from mcp.types import TextContent, Tool
 
 from sre_tools.utils import format_timestamp, read_json_file, read_tsv_file, truncate_string
 
+from ..shared import _parse_k8_object_identifier, _parse_time, _to_utc_timestamp
+
 
 async def _log_analysis(args: dict[str, Any]) -> list[TextContent]:
     """Analyze application logs from OTEL log files with LOG PATTERN MINING.

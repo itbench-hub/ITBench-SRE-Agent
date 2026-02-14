@@ -2,12 +2,13 @@
 MCP tool wrappers and definitions.
 """
 
+import json
 from pathlib import Path
 from typing import Any
 
 from mcp.types import TextContent
 
-from .builder import build_topology_standalone
+from .builder import _do_build_topology, build_topology_standalone
 
 
 async def _build_topology(args: dict[str, Any]) -> list[TextContent]:

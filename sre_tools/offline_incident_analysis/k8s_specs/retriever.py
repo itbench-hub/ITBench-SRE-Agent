@@ -31,6 +31,13 @@ from mcp.types import TextContent, Tool
 
 from sre_tools.utils import format_timestamp, read_json_file, read_tsv_file, truncate_string
 
+from ..shared import (
+    _build_k8_object_filter_mask,
+    _get_matched_entities_summary,
+    _parse_k8_object_identifier,
+    _parse_k8s_body_json,
+)
+
 
 async def _get_k8_spec(args: dict[str, Any]) -> list[TextContent]:
     """Retrieve the Kubernetes spec for a specific resource.

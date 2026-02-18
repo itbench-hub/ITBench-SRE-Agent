@@ -82,19 +82,19 @@ Examples:
   # Exec mode with prompt template (recommended)
   zero --workspace /tmp/work \\
        --read-only-dir ./Scenario-1 \\
-       --prompt-file ./prompts/react_shell_investigation.md \\
+       --prompt-file ./prompts/sre_react_shell_investigation.md \\
        -- exec -m "openai/o4-mini"
 
   # With additional instructions appended to prompt
   zero --workspace /tmp/work \\
        --read-only-dir ./Scenario-1 \\
-       --prompt-file ./prompts/react_shell_investigation.md \\
+       --prompt-file ./prompts/sre_react_shell_investigation.md \\
        -- exec -m "openai/o4-mini" "focus on the cart service"
 
   # With custom variables
   zero --workspace /tmp/work \\
        --read-only-dir ./Scenario-1 \\
-       --prompt-file ./prompts/react_shell_investigation.md \\
+       --prompt-file ./prompts/sre_react_shell_investigation.md \\
        --variable "custom_context=some value" \\
        -- exec -m "openai/o4-mini"
 

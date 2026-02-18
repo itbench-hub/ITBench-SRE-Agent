@@ -51,13 +51,13 @@ Zero MUST support a strict argument boundary between Zero args and Codex args:
 Examples:
 
 - Run with prompt template:
-  - `zero --workspace /tmp/work --read-only-dir /path/to/Scenario-27 --prompt-file ./prompts/react_shell_investigation.md --variable "SNAPSHOT_DIRS=- /path/to/Scenario-27" -- exec -m "openai/gpt-5.1"`
+  - `zero --workspace /tmp/work --read-only-dir /path/to/Scenario-27 --prompt-file ./prompts/sre_react_shell_investigation.md --variable "SNAPSHOT_DIRS=- /path/to/Scenario-27" -- exec -m "openai/gpt-5.1"`
 - Run with prompt template and additional user query:
-  - `zero --workspace /tmp/work --prompt-file ./prompts/react_shell_investigation.md --variable "SNAPSHOT_DIRS=- /path" -- exec -m "openai/gpt-5.1" "focus on cart service"`
+  - `zero --workspace /tmp/work --prompt-file ./prompts/sre_react_shell_investigation.md --variable "SNAPSHOT_DIRS=- /path" -- exec -m "openai/gpt-5.1" "focus on cart service"`
 - Run interactive TUI:
   - `zero --workspace /tmp/work --read-only-dir /path/to/Scenario-27 -- -m "openai/gpt-5.1"`
 - Enable trace collection:
-  - `zero --collect-traces --workspace /tmp/work --prompt-file ./prompts/react_shell_investigation.md --variable "SNAPSHOT_DIRS=- /path" -- exec -m "openai/gpt-5.1"`
+  - `zero --collect-traces --workspace /tmp/work --prompt-file ./prompts/sre_react_shell_investigation.md --variable "SNAPSHOT_DIRS=- /path" -- exec -m "openai/gpt-5.1"`
 
 Rationale: avoids flag collisions and avoids Zero needing to "understand" Codex flags.
 
@@ -162,7 +162,7 @@ Agent runs may be interrupted or fail to complete the final output step. The `re
 ```bash
 # Auto-retries up to 5 times if agent_output.json not created
 zero --workspace /tmp/work \
-    --prompt-file ./prompts/react_shell_investigation.md \
+    --prompt-file ./prompts/sre_react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=- /path/to/data" \
     -- exec --full-auto -m "openai/o4-mini"
 

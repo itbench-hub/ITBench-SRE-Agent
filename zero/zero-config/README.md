@@ -10,21 +10,38 @@ When you run Zero, these files are **copied to your workspace**:
 
 ## Quick Start
 
+**SRE Incident Diagnosis:**
+
 ```bash
 # Basic exec mode with prompt template
 python -m zero --workspace /tmp/work \
     --read-only-dir ./Scenario-1 \
-    --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
+    --prompt-file ./zero/zero-config/prompts/sre_react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=- /path/to/Scenario-1" \
     -- exec -m "openai/gpt-5.1"
 
 # With additional user query appended
 python -m zero --workspace /tmp/work \
     --read-only-dir ./Scenario-1 \
-    --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
+    --prompt-file ./zero/zero-config/prompts/sre_react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=- /path/to/Scenario-1" \
     -- exec -m "openai/gpt-5.1" "focus on the cart service"
+```
 
+**FinOps Cost Anomaly Investigation:**
+
+```bash
+# Run FinOps agent on a cost anomaly scenario
+python -m zero --workspace /tmp/work-finops \
+    --read-only-dir ./ITBench-Lite/snapshots/finops/v0.1-finops-anomaly/Scenario-1 \
+    --prompt-file ./zero/zero-config/prompts/finops_linear_analyses_shell_investigation.md \
+    --variable "SNAPSHOT_DIRS=- /path/to/ITBench-Lite/snapshots/finops/v0.1-finops-anomaly/Scenario-1" \
+    -- exec -m "openai/gpt-5.1" "Begin investigation"
+```
+
+**Other modes:**
+
+```bash
 # Interactive TUI mode (no prompt substitution)
 python -m zero --workspace /tmp/work \
     --read-only-dir ./Scenario-1 \
@@ -33,7 +50,7 @@ python -m zero --workspace /tmp/work \
 # With trace collection
 python -m zero --workspace /tmp/work \
     --read-only-dir ./Scenario-1 \
-    --prompt-file ./prompts/react_shell_investigation.md \
+    --prompt-file ./prompts/sre_react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=- /path/to/Scenario-1" \
     --collect-traces \
     -- exec -m "openai/gpt-5.1"
@@ -152,7 +169,7 @@ In `exec` mode, Zero automatically retries if the expected output file is not cr
 ```bash
 # Default: checks for agent_output.json, retries up to 5 times
 python -m zero --workspace /tmp/work \
-    --prompt-file ./prompts/react_shell_investigation.md \
+    --prompt-file ./prompts/sre_react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=- /path/to/data" \
     -- exec --full-auto -m "Azure/gpt-5.1"
 
@@ -160,7 +177,7 @@ python -m zero --workspace /tmp/work \
 python -m zero --workspace /tmp/work \
     --output-file output.json \
     --max-retries 3 \
-    --prompt-file ./prompts/react_shell_investigation.md \
+    --prompt-file ./prompts/sre_react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=- /path/to/data" \
     -- exec --full-auto -m "openai/o4-mini"
 ```
@@ -235,7 +252,7 @@ Pass via Codex CLI flags after `--`:
 
 ```bash
 python -m zero --workspace /tmp/work \
-    --prompt-file ./prompts/react_shell_investigation.md \
+    --prompt-file ./prompts/sre_react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=- /path/to/data" \
     -- exec -m "openai/gpt-5.1" "investigate"
 ```

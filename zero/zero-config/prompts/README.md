@@ -24,7 +24,11 @@ The prompts are organized in a modular way to avoid duplication:
   - MCP servers: `offline_incident_analysis`, `instana`, `kubernetes`
   - Includes: `data_sources/instana.md` + `data_sources/kubernetes.md` + `react_online_base.md`
 
-- **`react_shell_investigation.md`** - Shell-based investigation (existing)
+- **`sre_react_shell_investigation.md`** - SRE incident diagnosis from offline snapshots
+  - MCP servers: `offline_incident_analysis`
+
+- **`finops_linear_analyses_shell_investigation.md`** - FinOps cost anomaly investigation from offline snapshots
+  - No MCP servers required (uses shell tools to analyze `anomaly.json` and `data.csv`)
 
 ## File Inclusion Syntax
 

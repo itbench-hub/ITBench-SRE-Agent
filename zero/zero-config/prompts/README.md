@@ -8,7 +8,7 @@ The prompts are organized in a modular way to avoid duplication:
 
 ### Base Components
 
-- **`react_online_base.md`** - Shared investigation workflow, task definition, output format, and best practices
+- **`sre_react_online_base.md`** - Shared investigation workflow, task definition, output format, and best practices
 - **`data_sources/`** - Directory containing data source-specific documentation
   - **`clickhouse.md`** - ClickHouse-specific data schema and query patterns
   - **`instana.md`** - Instana APM-specific capabilities and query patterns
@@ -16,13 +16,13 @@ The prompts are organized in a modular way to avoid duplication:
 
 ### Prompt Variants
 
-- **`react_online.md`** - Uses ClickHouse + Kubernetes MCPs
+- **`sre_react_online.md`** - Uses ClickHouse + Kubernetes MCPs
   - MCP servers: `offline_incident_analysis`, `clickhouse`, `kubernetes`
-  - Includes: `data_sources/clickhouse.md` + `data_sources/kubernetes.md` + `react_online_base.md`
+  - Includes: `data_sources/clickhouse.md` + `data_sources/kubernetes.md` + `sre_react_online_base.md`
 
-- **`react_online_instana.md`** - Uses Instana + Kubernetes MCPs
+- **`sre_react_online_instana.md`** - Uses Instana + Kubernetes MCPs
   - MCP servers: `offline_incident_analysis`, `instana`, `kubernetes`
-  - Includes: `data_sources/instana.md` + `data_sources/kubernetes.md` + `react_online_base.md`
+  - Includes: `data_sources/instana.md` + `data_sources/kubernetes.md` + `sre_react_online_base.md`
 
 - **`sre_react_shell_investigation.md`** - SRE incident diagnosis from offline snapshots
   - MCP servers: `offline_incident_analysis`
@@ -44,7 +44,7 @@ mcp_servers:
 
 {{include: data_sources/clickhouse.md}}
 {{include: data_sources/kubernetes.md}}
-{{include: react_online_base.md}}
+{{include: sre_react_online_base.md}}
 ```
 
 This modular approach keeps the prompts DRY (Don't Repeat Yourself) while supporting multiple observability backends.

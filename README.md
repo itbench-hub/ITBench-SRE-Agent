@@ -228,7 +228,7 @@ mcp_servers:
 ```
 No MCP servers required — the agent uses shell tools to analyze `anomaly.json` and `data.csv` directly.
 
-**Example: Online Investigation** ([react_online.md](zero/zero-config/prompts/react_online.md))
+**Example: Online Investigation** ([sre_react_online.md](zero/zero-config/prompts/sre_react_online.md))
 ```markdown
 ---
 mcp_servers:
@@ -353,8 +353,8 @@ podman stop mcp-instana && podman rm mcp-instana
 
 To investigate incidents in live environments, you can use different observability backends:
 
-- **[react_online.md](zero/zero-config/prompts/react_online.md)** - ClickHouse + Kubernetes
-- **[react_online_instana.md](zero/zero-config/prompts/react_online_instana.md)** - Instana APM + Kubernetes
+- **[sre_react_online.md](zero/zero-config/prompts/sre_react_online.md)** - ClickHouse + Kubernetes
+- **[sre_react_online_instana.md](zero/zero-config/prompts/sre_react_online_instana.md)** - Instana APM + Kubernetes
 
 **For ClickHouse setup:** Instructions for setting up a live ITBench environment with ClickHouse, see: https://github.com/itbench-hub/ITBench/tree/main/scenarios/sre
 
@@ -420,7 +420,7 @@ echo "KUBECONFIG: $KUBECONFIG"
 # Run agent against live environment
 # Zero will automatically start the ClickHouse and Kubernetes MCP servers
 uv run python -m zero --workspace ./outputs/agent_outputs/23/1 \
-    --prompt-file ./zero/zero-config/prompts/react_online.md \
+    --prompt-file ./zero/zero-config/prompts/sre_react_online.md \
     -- exec --full-auto -m "gemini-2.5-pro" "Begin investigation"
 ```
 
@@ -429,7 +429,7 @@ uv run python -m zero --workspace ./outputs/agent_outputs/23/1 \
 # Run agent against live environment
 # Zero will automatically start the Instana and Kubernetes MCP servers
 uv run python -m zero --workspace ./outputs/agent_outputs/instana_outputs/1 \
-    --prompt-file ./zero/zero-config/prompts/react_online_instana.md \
+    --prompt-file ./zero/zero-config/prompts/sre_react_online_instana.md \
     -- exec --full-auto -m "gemini-2.5-pro" "Begin investigation"
 ```
 

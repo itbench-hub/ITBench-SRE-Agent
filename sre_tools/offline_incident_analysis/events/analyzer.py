@@ -31,6 +31,13 @@ from mcp.types import TextContent, Tool
 
 from sre_tools.utils import format_timestamp, read_json_file, read_tsv_file, truncate_string
 
+from ..shared import (
+    _extract_deployment_from_pod,
+    _parse_otel_event_body,
+    _parse_time,
+    _to_utc_timestamp,
+)
+
 
 def _convert_otel_events_to_flat(df: "pd.DataFrame") -> "pd.DataFrame":
     """Convert OTEL-format events DataFrame to flat format.

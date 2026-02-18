@@ -20,7 +20,7 @@ import yaml
 BUNDLED_CONFIG_DIR = Path(__file__).parent / "zero-config"
 
 # Default prompt template within the bundled config
-DEFAULT_PROMPT_TEMPLATE = BUNDLED_CONFIG_DIR / "prompts" / "react_shell_investigation.md"
+DEFAULT_PROMPT_TEMPLATE = BUNDLED_CONFIG_DIR / "prompts" / "sre_react_shell_investigation.md"
 
 
 @dataclass

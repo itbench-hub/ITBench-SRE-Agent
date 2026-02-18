@@ -31,6 +31,8 @@ from mcp.types import TextContent, Tool
 
 from sre_tools.utils import format_timestamp, read_json_file, read_tsv_file, truncate_string
 
+from .aggregator import _get_context_contract
+
 
 def _cli_get_context_contract(args) -> int:
     """CLI handler for get_context_contract command."""

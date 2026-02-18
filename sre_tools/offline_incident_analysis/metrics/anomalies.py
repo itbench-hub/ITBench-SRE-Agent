@@ -31,6 +31,8 @@ from mcp.types import TextContent, Tool
 
 from sre_tools.utils import format_timestamp, read_json_file, read_tsv_file, truncate_string
 
+from ..shared import _parse_k8_object_identifier, _parse_time, _to_utc_timestamp
+
 
 async def _get_metric_anomalies(args: dict[str, Any]) -> list[TextContent]:
     if pd is None:

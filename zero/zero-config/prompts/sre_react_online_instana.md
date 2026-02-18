@@ -13,4 +13,4 @@ mcp_servers:
 
 {{include: data_sources/kubernetes.md}}
 
-{{include: react_online_base.md}}
+{{include: sre_react_online_base.md}}

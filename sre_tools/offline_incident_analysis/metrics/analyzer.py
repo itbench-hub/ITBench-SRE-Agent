@@ -31,6 +31,17 @@ from mcp.types import TextContent, Tool
 
 from sre_tools.utils import format_timestamp, read_json_file, read_tsv_file, truncate_string
 
+from ..shared import (
+    _df_to_json_records,
+    _extract_deployment_from_pod,
+    _extract_object_info_from_filename,
+    _filter_labels,
+    _parse_k8_object_identifier,
+    _parse_tags_to_dict,
+    _parse_time,
+    _to_utc_timestamp,
+)
+
 
 def _sanitize_metric_name(name: str) -> str:
     """Sanitize metric name to be valid Python/Pandas identifier.

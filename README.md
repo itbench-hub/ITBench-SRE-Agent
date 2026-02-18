@@ -107,12 +107,19 @@ uv run hf download \
   --include "snapshots/sre/v0.2-*/Scenario-5/*" \
   --local-dir ./ITBench-Lite
 
-# Or download all scenarios if you need the full benchmark:
-# uv run hf download \
-#   ibm-research/ITBench-Lite \
-#   --repo-type dataset \
-#   --include "snapshots/sre/v0.2-*/Scenario-*" \
-#   --local-dir ./ITBench-Lite
+# Or download all SRE scenarios if you need the full benchmark:
+uv run hf download \
+  ibm-research/ITBench-Lite \
+  --repo-type dataset \
+  --include "snapshots/sre/v0.2-*/Scenario-*" \
+  --local-dir ./ITBench-Lite
+
+# Download FinOps cost anomaly scenarios:
+uv run hf download \
+  ibm-research/ITBench-Lite \
+  --repo-type dataset \
+  --include "snapshots/finops/v0.1-finops-anomaly/Scenario-*" \
+  --local-dir ./ITBench-Lite
 ```
 
 ### Environment Variables
@@ -168,14 +175,14 @@ Zero is a thin wrapper around Codex CLI that handles workspace setup, prompt tem
 # Workspace follows the structure: outputs/agent_outputs/<incident_id>/<trial_number>
 uv run python -m zero --workspace ./outputs/agent_outputs/2/1 \
     --read-only-dir $(pwd)/ITBench-Lite/snapshots/sre/v0.2-B96DF826-4BB2-4B62-97AB-6D84254C53D7/Scenario-2 \
-    --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
+    --prompt-file ./zero/zero-config/prompts/sre_react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=$(pwd)/ITBench-Lite/snapshots/sre/v0.2-B96DF826-4BB2-4B62-97AB-6D84254C53D7/Scenario-2" \
     -- exec --full-auto -m "gemini-2.5-pro" "Begin investigation"
 
 # With additional user query appended to the base prompt (trial 2 of same scenario)
 uv run python -m zero --workspace ./outputs/agent_outputs/2/2 \
     --read-only-dir $(pwd)/ITBench-Lite/snapshots/sre/v0.2-B96DF826-4BB2-4B62-97AB-6D84254C53D7/Scenario-2 \
-    --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
+    --prompt-file ./zero/zero-config/prompts/sre_react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=$(pwd)/ITBench-Lite/snapshots/sre/v0.2-B96DF826-4BB2-4B62-97AB-6D84254C53D7/Scenario-2" \
     -- exec --full-auto -m "claude-4-5-opus-latest" \
     "Focus on the payment service alerts"
@@ -187,13 +194,25 @@ uv run python -m zero --workspace ./outputs/agent_outputs/2/3 \
     -- -m "gemini-2.5-pro"
 ```
 
+**FinOps Cost Anomaly Investigation:**
+
+```bash
+# Run FinOps agent on a cost anomaly scenario
+# The agent reads anomaly.json (date + account_id) and data.csv (hierarchical cost data)
+uv run python -m zero --workspace ./outputs/agent_outputs/finops/1/1 \
+    --read-only-dir $(pwd)/ITBench-Lite/snapshots/finops/v0.1-finops-anomaly/Scenario-1 \
+    --prompt-file ./zero/zero-config/prompts/finops_linear_analyses_shell_investigation.md \
+    --variable "SNAPSHOT_DIRS=$(pwd)/ITBench-Lite/snapshots/finops/v0.1-finops-anomaly/Scenario-1" \
+    -- exec --full-auto -m "gemini-2.5-pro" "Begin investigation"
+```
+
 📖 **Full documentation**: [zero/zero-config/README.md](./zero/zero-config/README.md)
 
 ### Prompt Templates
 
 Prompt templates can specify which MCP servers they require using YAML frontmatter. Zero will automatically load only the specified servers.
 
-**Example: Offline Investigation** ([react_shell_investigation.md](zero/zero-config/prompts/react_shell_investigation.md))
+**Example: Offline Investigation** ([sre_react_shell_investigation.md](zero/zero-config/prompts/sre_react_shell_investigation.md))
 ```markdown
 ---
 mcp_servers:
@@ -203,7 +222,13 @@ mcp_servers:
 **Task**: Investigate incident from OFFLINE snapshot data...
 ```
 
-**Example: Online Investigation** ([react_online.md](zero/zero-config/prompts/react_online.md))
+**Example: FinOps Cost Anomaly** ([finops_linear_analyses_shell_investigation.md](zero/zero-config/prompts/finops_linear_analyses_shell_investigation.md))
+```markdown
+**Task**: Investigate cost anomalies from offline snapshot data...
+```
+No MCP servers required — the agent uses shell tools to analyze `anomaly.json` and `data.csv` directly.
+
+**Example: Online Investigation** ([sre_react_online.md](zero/zero-config/prompts/sre_react_online.md))
 ```markdown
 ---
 mcp_servers:
@@ -328,8 +353,8 @@ podman stop mcp-instana && podman rm mcp-instana
 
 To investigate incidents in live environments, you can use different observability backends:
 
-- **[react_online.md](zero/zero-config/prompts/react_online.md)** - ClickHouse + Kubernetes
-- **[react_online_instana.md](zero/zero-config/prompts/react_online_instana.md)** - Instana APM + Kubernetes
+- **[sre_react_online.md](zero/zero-config/prompts/sre_react_online.md)** - ClickHouse + Kubernetes
+- **[sre_react_online_instana.md](zero/zero-config/prompts/sre_react_online_instana.md)** - Instana APM + Kubernetes
 
 **For ClickHouse setup:** Instructions for setting up a live ITBench environment with ClickHouse, see: https://github.com/itbench-hub/ITBench/tree/main/scenarios/sre
 
@@ -395,7 +420,7 @@ echo "KUBECONFIG: $KUBECONFIG"
 # Run agent against live environment
 # Zero will automatically start the ClickHouse and Kubernetes MCP servers
 uv run python -m zero --workspace ./outputs/agent_outputs/23/1 \
-    --prompt-file ./zero/zero-config/prompts/react_online.md \
+    --prompt-file ./zero/zero-config/prompts/sre_react_online.md \
     -- exec --full-auto -m "gemini-2.5-pro" "Begin investigation"
 ```
 
@@ -404,7 +429,7 @@ uv run python -m zero --workspace ./outputs/agent_outputs/23/1 \
 # Run agent against live environment
 # Zero will automatically start the Instana and Kubernetes MCP servers
 uv run python -m zero --workspace ./outputs/agent_outputs/instana_outputs/1 \
-    --prompt-file ./zero/zero-config/prompts/react_online_instana.md \
+    --prompt-file ./zero/zero-config/prompts/sre_react_online_instana.md \
     -- exec --full-auto -m "gemini-2.5-pro" "Begin investigation"
 ```
 
@@ -412,11 +437,12 @@ uv run python -m zero --workspace ./outputs/agent_outputs/instana_outputs/1 \
 
 ### 3. Evaluate Agent Output
 
-Evaluate agent outputs against ground truth using the `itbench_evaluations` judge (LLM-as-a-Judge).
+Evaluate agent outputs against ground truth using the [ITBench Evaluations](./ITBench-Evaluations/) judge (LLM-as-a-Judge). For detailed documentation on ground-truth formats, agent output structure, available metrics, and CLI options, see the [ITBench Evaluations README](./ITBench-Evaluations/README.md).
+
+**SRE Evaluation:**
 
 ```bash
-# Batch evaluate agent output against ground truth
-# Point to the extracted scenario directory (replace with your actual directory name)
+# Evaluate SRE agent outputs against ground truth
 # Make sure judge environment variables are set (see Environment Variables section)
 JUDGE_BASE_URL="https://openrouter.ai/api/v1" \
 JUDGE_API_KEY="$OPENROUTER_API_KEY" \
@@ -424,15 +450,24 @@ JUDGE_MODEL="google/gemini-2.5-pro" \
 uv run itbench-eval \
   --ground-truth ./ITBench-Lite/snapshots/sre/v0.2-B96DF826-4BB2-4B62-97AB-6D84254C53D7 \
   --outputs ./outputs/agent_outputs \
+  --eval-criteria ROOT_CAUSE_ENTITY ROOT_CAUSE_REASONING \
   --result-file ./outputs/evaluation_results.json
 ```
 
-Notes:
-- `--ground-truth` should point to the directory containing scenario subdirectories (e.g., `Scenario-1`, `Scenario-2`, etc.), each with a `ground_truth.yaml` file
-- Alternatively, `--ground-truth` can be a single consolidated JSON/YAML file
-- The `--outputs` directory should contain subdirectories for each scenario (e.g., `2/1/agent_output.json`, `2/2/agent_output.json`)
-- Results are written to `outputs/evaluation_results.json`
-- Metrics are produced as floats in [0,1] (precision/recall/F1)
+**FinOps Evaluation:**
+
+```bash
+# Evaluate FinOps agent outputs against ground truth
+JUDGE_BASE_URL="https://openrouter.ai/api/v1" \
+JUDGE_API_KEY="$OPENROUTER_API_KEY" \
+JUDGE_MODEL="google/gemini-2.5-pro" \
+uv run itbench-eval \
+  --domain finops \
+  --ground-truth ./ITBench-Lite/snapshots/finops/v0.1-finops-anomaly \
+  --outputs ./outputs/agent_outputs/finops \
+  --eval-criteria ROOT_CAUSE_RESOURCE \
+  --result-file ./outputs/finops_evaluation_results.json
+```
 
 ---
 
@@ -459,17 +494,9 @@ outputs/
 
 ## Metrics
 
-The judge evaluates agent outputs on these metrics:
+The judge evaluates agent outputs on metrics including root cause entity identification (precision/recall/F1), reasoning correctness, propagation chain scoring, fault localization, and proximity-based scoring. All metrics are produced as floats in [0,1].
 
-| Metric | Description | Range |
-|--------|-------------|-------|
-| `root_cause_entity_*` | Root cause entity precision/recall/F1 | 0.0–1.0 |
-| `root_cause_entity_k_*` | Root cause entity@k precision/recall/F1 | 0.0–1.0 |
-| `root_cause_reasoning` | Reasoning correctness | 0.0–1.0 |
-| `root_cause_reasoning_partial` | Partial credit for reasoning | 0.0–1.0 |
-| `propagation_chain` | Failure propagation chain score | 0.0–1.0 |
-| `fault_localization_component_identification` | Component-level localization (pass/fail) | 0 or 1 |
-| `root_cause_proximity_*` | Proximity precision/recall/F1 | 0.0–1.0 |
+For the full list of metrics and their descriptions, see the [ITBench Evaluations README](./ITBench-Evaluations/README.md#metrics-covered).
 
 ---
 
@@ -490,14 +517,18 @@ ITBench-SRE-Agent/
 │       ├── README.md              # Zero documentation
 │       ├── config.toml            # Codex config template
 │       └── prompts/               # Prompt templates
-│           └── react_shell_investigation.md  # Main SRE prompt
+│           ├── sre_react_shell_investigation.md     # SRE incident diagnosis prompt
+│           └── finops_linear_analyses_shell_investigation.md  # FinOps cost anomaly prompt
 │
-├── itbench_evaluations/           # LLM-as-a-Judge
-│   ├── __main__.py                # `itbench-eval` CLI entrypoint
-│   ├── agent.py                   # Evaluator
-│   ├── loader.py                  # GT/output loaders
-│   ├── aggregator.py              # Statistics
-│   └── prompts/                   # Judge prompts
+├── ITBench-Evaluations/           # LLM-as-a-Judge (git submodule)
+│   ├── README.md                  # Evaluations documentation
+│   ├── pyproject.toml             # Package configuration
+│   └── itbench_evaluations/       # Evaluation toolkit
+│       ├── __main__.py            # `itbench-evaluations` CLI entrypoint
+│       ├── agent.py               # Judge workflow and evaluation logic
+│       ├── loader.py              # GT/output loaders
+│       ├── aggregator.py          # Statistics
+│       └── prompts/               # Judge prompts
 │
 ├── sre_tools/                     # MCP tools for SRE
 │   ├── README.md                  # Full tool documentation
@@ -506,7 +537,9 @@ ITBench-SRE-Agent/
 │       └── tools.py               # All SRE analysis tools
 │
 └── ITBench-Lite/                  # Benchmark data (downloaded from HF)
-    └── snapshots/sre/...
+    └── snapshots/
+        ├── sre/...                # SRE incident diagnosis scenarios
+        └── finops/...             # FinOps cost anomaly scenarios
 ```
 
 ---
@@ -523,7 +556,7 @@ uv run isort .
 
 # Run single agent test
 uv run python -m zero --workspace /tmp/test --dry-run \
-    --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
+    --prompt-file ./zero/zero-config/prompts/sre_react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=/path/to/scenario" \
     -- exec -m "gpt-5.2"
 ```

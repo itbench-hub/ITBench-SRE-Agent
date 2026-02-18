@@ -31,6 +31,16 @@ from mcp.types import TextContent, Tool
 
 from sre_tools.utils import format_timestamp, read_json_file, read_tsv_file, truncate_string
 
+from ..alerts.analyzer import _alert_analysis
+from ..events.analyzer import _event_analysis
+from ..k8s_specs.change_analyzer import _k8s_spec_change_analysis
+from ..k8s_specs.retriever import _get_k8_spec
+from ..logs.analyzer import _log_analysis
+from ..metrics.anomalies import _get_metric_anomalies
+from ..shared import _parse_k8_object_identifier
+from ..topology.analyzer import _topology_analysis
+from ..traces.analyzer import _get_trace_error_tree
+
 
 def _find_scenario_files(scenario_dir: Path) -> dict[str, Optional[Path]]:
     """Find common scenario files in a directory.

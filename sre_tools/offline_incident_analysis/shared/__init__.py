@@ -10,6 +10,7 @@ from .filters import (
 )
 from .formatters import (
     _df_to_json_records,
+    _format_k8s_timestamp,
     _format_latency,
     _format_rate,
 )
@@ -30,7 +31,6 @@ from .parsers import (
 from .time_utils import (
     _effective_update_timestamp,
     _extract_alert_snapshot_timestamp,
-    _format_k8s_timestamp,
     _to_utc_timestamp,
 )
 

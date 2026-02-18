@@ -33,6 +33,13 @@ uv run hf download \
   --include "snapshots/sre/v0.2-*/Scenario-5/*" \
   --local-dir ./ITBench-Lite
 
+# Download FinOps cost anomaly scenarios
+uv run hf download \
+  ibm-research/ITBench-Lite \
+  --repo-type dataset \
+  --include "snapshots/finops/v0.1-finops-anomaly/Scenario-*" \
+  --local-dir ./ITBench-Lite
+
 # Verify installation
 uv run python -m zero --help
 uv run python -m itbench_evaluations --help
@@ -192,15 +199,26 @@ uv run python -m zero --workspace /tmp/test-interactive \
     -- -m "openai/gpt-4o-mini"
 ```
 
-**Exec mode** (non-interactive - for automation):
+**Exec mode — SRE** (non-interactive - for automation):
 
 ```bash
-# Run agent with prompt template (requires a valid snapshot directory)
+# Run agent with SRE prompt template
 uv run python -m zero --workspace /tmp/test-exec \
-    --prompt-file ./zero/zero-config/prompts/react_shell_investigation.md \
+    --prompt-file ./zero/zero-config/prompts/sre_react_shell_investigation.md \
     --variable "SNAPSHOT_DIRS=/path/to/ITBench-Lite/snapshots/sre/v0.2-.../Scenario-1" \
     -- exec --full-auto -m "openai/gpt-4o-mini" \
     "Start the investigation"
+```
+
+**Exec mode — FinOps** (non-interactive - for automation):
+
+```bash
+# Run agent with FinOps prompt template
+uv run python -m zero --workspace /tmp/test-finops \
+    --prompt-file ./zero/zero-config/prompts/finops_linear_analyses_shell_investigation.md \
+    --variable "SNAPSHOT_DIRS=/path/to/ITBench-Lite/snapshots/finops/v0.1-finops-anomaly/Scenario-1" \
+    -- exec --full-auto -m "openai/gpt-4o-mini" \
+    "Begin investigation"
 ```
 
 **Simple exec test** (no prompt file):
@@ -295,15 +313,23 @@ uv run hf download \
   --include "snapshots/sre/v0.2-*/Scenario-5/*" \
   --local-dir ./ITBench-Lite
 
-# Or download all scenarios if needed
-# uv run hf download \
-#   ibm-research/ITBench-Lite \
-#   --repo-type dataset \
-#   --include "snapshots/sre/v0.2-*/Scenario-*" \
-#   --local-dir ./ITBench-Lite
+# Or download all SRE scenarios if needed
+uv run hf download \
+  ibm-research/ITBench-Lite \
+  --repo-type dataset \
+  --include "snapshots/sre/v0.2-*/Scenario-*" \
+  --local-dir ./ITBench-Lite
+
+# Download FinOps scenarios
+uv run hf download \
+  ibm-research/ITBench-Lite \
+  --repo-type dataset \
+  --include "snapshots/finops/v0.1-finops-anomaly/Scenario-*" \
+  --local-dir ./ITBench-Lite
 
 # Verify
 ls ITBench-Lite/snapshots/sre/
+ls ITBench-Lite/snapshots/finops/
 ```
 
 ### Agent not producing output file

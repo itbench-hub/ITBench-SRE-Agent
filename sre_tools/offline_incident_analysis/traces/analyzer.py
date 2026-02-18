@@ -31,6 +31,10 @@ from mcp.types import TextContent, Tool
 
 from sre_tools.utils import format_timestamp, read_json_file, read_tsv_file, truncate_string
 
+from ..shared import _format_latency, _format_rate, _parse_duration, _parse_time
+
+from .stats import _compute_delta, _compute_percentiles
+
 
 def _extract_service_path_from_trace(spans: List[Dict[str, Any]]) -> List[str]:
     """

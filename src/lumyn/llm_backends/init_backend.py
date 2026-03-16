@@ -28,55 +28,49 @@ try:
     PROVIDER_AGENTS = os.environ["PROVIDER_AGENTS"]
 except KeyError:
     PROVIDER_AGENTS = ""
-    print(f"Unable to find environment variable - PROVIDER_AGENTS.")
-    raise
+    print(f"Unable to find environment variable - PROVIDER_AGENTS. Defaulting to empty.")
 
 try:
     PROVIDER_TOOLS = os.environ["PROVIDER_TOOLS"]
 except KeyError:
     PROVIDER_TOOLS = ""
-    print(f"Unable to find environment variable - PROVIDER_TOOLS.")
-    raise
+    print(f"Unable to find environment variable - PROVIDER_TOOLS. Defaulting to empty.")
 
 try:
     MODEL_AGENTS  = os.environ["MODEL_AGENTS"]
 except KeyError:
     MODEL_AGENTS = ""
-    print(f"Unable to find environment variable - MODEL_AGENTS.")
-    raise
+    print(f"Unable to find environment variable - MODEL_AGENTS. Defaulting to empty.")
 
 try:
     MODEL_TOOLS = os.environ["MODEL_TOOLS"]
 except KeyError:
     MODEL_TOOLS = ""
-    print(f"Unable to find environment variable - MODEL_TOOLS.")
-    raise
+    print(f"Unable to find environment variable - MODEL_TOOLS. Defaulting to empty.")
 
 try:
     URL_AGENTS = os.environ["URL_AGENTS"].rstrip("/")
 except KeyError:
     URL_AGENTS = ""
-    print(f"Unable to find environment variable - URL_AGENTS.")
-    raise
+    print(f"Unable to find environment variable - URL_AGENTS. Defaulting to empty.")
 
 try:
     URL_TOOLS = os.environ["URL_TOOLS"].rstrip("/")
 except KeyError:
     URL_TOOLS = ""
-    print(f"Unable to find environment variable - URL_TOOLS.")
-    raise
+    print(f"Unable to find environment variable - URL_TOOLS. Defaulting to empty.")
 
 try:
     API_KEY_AGENTS = os.environ["API_KEY_AGENTS"]
 except KeyError:
-    print("Unable to find environment variable - API_KEY_AGENTS.")
-    raise
+    API_KEY_AGENTS = ""
+    print("Unable to find environment variable - API_KEY_AGENTS. Defaulting to empty.")
 
 try:
     API_KEY_TOOLS = os.environ["API_KEY_TOOLS"]
 except KeyError:
-    print("Unable to find environment variable - API_KEY_TOOLS.")
-    raise
+    API_KEY_TOOLS = ""
+    print("Unable to find environment variable - API_KEY_TOOLS. Defaulting to empty.")
 
 try:
     SEED_AGENTS = int(os.environ["SEED_AGENTS"])
@@ -106,19 +100,21 @@ try:
     TEMPERATURE_AGENTS = float(os.environ["TEMPERATURE_AGENTS"])
 except KeyError:
     TEMPERATURE_AGENTS = 0.0
+except ValueError as e:
     print(f"Unable to find environment variable - TEMPERATURE_AGENTS. Defaulting to {TEMPERATURE_AGENTS}.")
 except ValueError as e:
-    print("Incorrect TEMPERATURE_AGENTS value:", e)
-    raise
+    TEMPERATURE_AGENTS = 0.0
+    print("Incorrect TEMPERATURE_AGENTS value:", e, ". Defaulting to 0.0")
 
 try:
     TEMPERATURE_TOOLS = float(os.environ["TEMPERATURE_TOOLS"])
 except KeyError:
     TEMPERATURE_TOOLS = 0.0
+except ValueError as e:
     print(f"Unable to find environment variable - TEMPERATURE_TOOLS. Defaulting to {TEMPERATURE_TOOLS}.")
 except ValueError as e:
-    print("Incorrect TEMPERATURE_TOOLS value:", e)
-    raise
+    TEMPERATURE_TOOLS = 0.0
+    print("Incorrect TEMPERATURE_TOOLS value:", e, ". Defaulting to 0.0")
 
 try:
     REASONING_EFFORT_AGENTS = str(os.environ["REASONING_EFFORT_AGENTS"]).lower()
